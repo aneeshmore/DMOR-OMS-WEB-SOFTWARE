@@ -1,0 +1,495 @@
+import jwt from 'jsonwebtoken';
+import logger from '../../config/logger.js';
+import { AppError, UnauthorizedError, NotFoundError, ConflictError } from '../../utils/AppError.js';
+import { compareHash } from '../../utils/encryption.js';
+import { AuthorityRepository } from './repository.js';
+
+// Import validated JWT_SECRET from auth middleware
+import { JWT_SECRET } from '../../middleware/auth.js';
+const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
+
+class AuthorityController {
+  constructor() {
+    this.repository = new AuthorityRepository();
+  }
+
+  /**
+   * Login user
+   * @route POST /api/v1/auth/login
+   */
+  login = async (req, res, next) => {
+    try {
+      const { username, password } = req.body;
+
+      if (!username || !password) {
+        logger.warn('Login attempt with missing credentials');
+        throw new AppError('Username and password are required', 400);
+      }
+
+      logger.debug('Attempting login', { username });
+
+      // Find user by username using Drizzle
+      const userResult = await this.repository.findByUsername(username);
+
+      if (!userResult) {
+        logger.warn('Login failed: User not found', { username });
+        throw new UnauthorizedError('Invalid credentials');
+      }
+
+      const { employee: user, role } = userResult;
+
+      // Check if user is active
+      if (user.status !== 'Active') {
+        throw new UnauthorizedError('User account is inactive');
+      }
+
+      // Verify password using encryption util
+      const isPasswordValid = await compareHash(password, user.passwordHash);
+
+      if (!isPasswordValid) {
+        logger.warn('Login failed: Invalid password', { username });
+        throw new UnauthorizedError('Invalid credentials');
+      }
+
+      logger.debug('Password verified, fetching permissions', {
+        username,
+        employeeId: user.employeeId,
+      });
+
+      // Fetch user permissions using Drizzle
+      const permissionsResult = await this.repository.getUserPermissions(user.employeeId);
+
+      const permissions = permissionsResult
+        .filter(p => {
+          const actions = Array.isArray(p.grantedActions) ? p.grantedActions : [];
+          return actions.length > 0; // Only include permissions with granted APIs
+        })
+        .map(p => {
+          const actions = Array.isArray(p.grantedActions) ? p.grantedActions : [];
+          return {
+            PageName: p.permissionName,
+            CanCreate: true,
+            CanModify: true,
+            CanView: true,
+            CanLock: true,
+            grantedApis: actions,
+          };
+        });
+
+      // Generate JWT token
+      const token = jwt.sign(
+        {
+          employeeId: user.employeeId,
+          username: user.username,
+          role: role?.roleName,
+          isSalesRole: role?.isSalesRole || false,
+          isSupervisorRole: role?.isSupervisorRole || false,
+        },
+        JWT_SECRET,
+        { expiresIn: JWT_EXPIRES_IN }
+      );
+
+      // Prepare user data (exclude password hash)
+      const userData = {
+        EmployeeID: user.employeeId,
+        FirstName: user.firstName,
+        LastName: user.lastName,
+        Username: user.username,
+        Role: role?.roleName,
+        landingPage: role?.landingPage || '/dashboard',
+        permissions,
+      };
+
+      logger.info('User logged in successfully', { username, employeeId: user.employeeId });
+
+      // Set httpOnly cookie for JWT (more secure than localStorage)
+      const maxAge = 7 * 24 * 60 * 60 * 1000; // 7 days in milliseconds
+      res.cookie('auth_token', token, {
+        httpOnly: true, // Prevents XSS attacks from accessing token
+        secure: process.env.NODE_ENV === 'production', // HTTPS only in production
+        sameSite: 'strict', // CSRF protection
+        maxAge,
+        path: '/',
+      });
+
+      res.json({
+        success: true,
+        token, // Still return token for backward compatibility / mobile apps
+        user: userData,
+        message: 'Login successful',
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  /**
+   * Logout user
+   * @route POST /api/v1/auth/logout
+   */
+  logout = async (req, res, next) => {
+    try {
+      // Clear the httpOnly cookie
+      res.clearCookie('auth_token', {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+        path: '/',
+      });
+
+      logger.info('User logged out', { userId: req.user?.employeeId });
+
+      res.json({
+        success: true,
+        message: 'Logout successful',
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  /**
+   * Get current authenticated user
+   * @route GET /api/v1/auth/me
+   */
+  getCurrentUser = async (req, res, next) => {
+    try {
+      if (!req.user) {
+        throw new UnauthorizedError('Not authenticated');
+      }
+
+      const userResult = await this.repository.findById(req.user.employeeId);
+
+      if (!userResult) {
+        throw new NotFoundError('User not found');
+      }
+
+      const { employee: user, role } = userResult;
+
+      // Fetch permissions
+      const permissionsResult = await this.repository.getUserPermissions(user.employeeId);
+
+      const permissions = permissionsResult
+        .filter(p => {
+          const actions = Array.isArray(p.grantedActions) ? p.grantedActions : [];
+          return actions.length > 0; // Only include permissions with granted APIs
+        })
+        .map(p => {
+          const actions = Array.isArray(p.grantedActions) ? p.grantedActions : [];
+          return {
+            PageName: p.permissionName,
+            CanCreate: true,
+            CanModify: true,
+            CanView: true,
+            CanLock: true,
+            grantedApis: actions,
+          };
+        });
+
+      res.json({
+        success: true,
+        data: {
+          EmployeeID: user.employeeId,
+          FirstName: user.firstName,
+          LastName: user.lastName,
+          Username: user.username,
+          Role: role?.roleName,
+          landingPage: role?.landingPage || '/dashboard',
+          permissions,
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+  /**
+   * Get all roles
+   */
+  getRoles = async (req, res, next) => {
+    try {
+      const roles = await this.repository.getAllRoles();
+      res.json({ success: true, data: roles });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  /**
+   * Get all permissions
+   */
+  getPermissions = async (req, res, next) => {
+    try {
+      const permissions = await this.repository.getAllPermissions();
+      res.json({ success: true, data: permissions });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  /**
+   * Get all role permissions
+   */
+  getRolePermissions = async (req, res, next) => {
+    try {
+      const rolePermissions = await this.repository.getAllRolePermissions();
+      res.json({ success: true, data: rolePermissions });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  /**
+   * Update role permission
+   */
+  updateRolePermission = async (req, res, next) => {
+    try {
+      const { roleId, permissionId, grantedActions } = req.body;
+
+      if (!roleId || !permissionId || !Array.isArray(grantedActions)) {
+        throw new AppError('Invalid input', 400);
+      }
+
+      // Validate actions - now accepts API route format (METHOD:/path) or legacy actions
+      // New format: 'GET:/orders', 'POST:/orders', etc.
+      // Legacy format: 'view', 'create', 'modify', etc.
+      const API_ROUTE_PATTERN = /^(GET|POST|PUT|PATCH|DELETE):\/.+$/i;
+      const LEGACY_ACTIONS = ['view', 'create', 'modify', 'delete', 'lock', 'export'];
+
+      const invalidActions = grantedActions.filter(a => {
+        // Accept new API route format OR legacy actions
+        return !API_ROUTE_PATTERN.test(a) && !LEGACY_ACTIONS.includes(a.toLowerCase());
+      });
+      if (invalidActions.length > 0) {
+        throw new AppError(`Invalid actions: ${invalidActions.join(', ')}`, 400);
+      }
+
+      const result = await this.repository.updateRolePermission(
+        roleId,
+        permissionId,
+        grantedActions
+      );
+
+      // Clear permission cache for all users since role affects multiple users
+      // Import at top: import { clearPermissionCache } from '../../middleware/requirePermission.js';
+      const { clearPermissionCache } = await import('../../middleware/requirePermission.js');
+      clearPermissionCache();
+      logger.info('Permission cache cleared after role permission update', {
+        roleId,
+        permissionId,
+      });
+
+      res.json({ success: true, data: result[0], message: 'Permission updated' });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  /**
+   * Duplicate a role with all its permissions
+   * @route POST /api/v1/auth/roles/:id/duplicate
+   */
+  duplicateRole = async (req, res, next) => {
+    try {
+      const sourceRoleId = parseInt(req.params.id);
+      const { newRoleName, description } = req.body;
+
+      if (!newRoleName || !newRoleName.trim()) {
+        throw new AppError('New role name is required', 400);
+      }
+
+      // Check if source role exists
+      const sourceRole = await this.repository.getRoleById(sourceRoleId);
+      if (!sourceRole) {
+        throw new NotFoundError('Source role not found');
+      }
+
+      // Check if new role name already exists
+      const existingRole = await this.repository.getRoleByName(newRoleName.trim());
+      if (existingRole) {
+        throw new AppError('A role with this name already exists', 400);
+      }
+
+      // Create new role
+      const newRole = await this.repository.createRole({
+        roleName: newRoleName.trim(),
+        description: description || `Copy of ${sourceRole.roleName}`,
+        landingPage: sourceRole.landingPage || '/dashboard',
+        isActive: true,
+      });
+
+      // Get source role's permissions
+      const sourcePermissions = await this.repository.getRolePermissionsById(sourceRoleId);
+
+      // Only copy permissions that have granted actions (skip empty ones)
+      const nonEmptyPermissions = sourcePermissions.filter(
+        perm => Array.isArray(perm.grantedActions) && perm.grantedActions.length > 0
+      );
+
+      // Copy permissions to new role
+      for (const perm of nonEmptyPermissions) {
+        await this.repository.updateRolePermission(
+          newRole.roleId,
+          perm.permissionId,
+          perm.grantedActions
+        );
+      }
+
+      logger.info('Role duplicated successfully', {
+        sourceRoleId,
+        newRoleId: newRole.roleId,
+        newRoleName,
+      });
+
+      res.status(201).json({
+        success: true,
+        data: newRole,
+        message: `Role "${newRoleName}" created with ${nonEmptyPermissions.length} permissions copied`,
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  /**
+   * Get roles by department ID
+   * @route GET /api/v1/auth/roles/by-department/:departmentId
+   */
+  getRolesByDepartment = async (req, res, next) => {
+    try {
+      const departmentId = parseInt(req.params.departmentId);
+      if (isNaN(departmentId)) {
+        throw new AppError('Invalid department ID', 400);
+      }
+      const roles = await this.repository.getRolesByDepartment(departmentId);
+      res.json({ success: true, data: roles });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  /**
+   * Create a new role
+   * @route POST /api/v1/auth/roles
+   */
+  createRole = async (req, res, next) => {
+    try {
+      const { roleName, description, departmentId, landingPage } = req.body;
+
+      if (!roleName || !roleName.trim()) {
+        throw new AppError('Role name is required', 400);
+      }
+
+      // Check if role name already exists
+      const existingRole = await this.repository.getRoleByName(roleName.trim());
+      if (existingRole) {
+        throw new AppError('A role with this name already exists', 400);
+      }
+
+      const newRole = await this.repository.createRole({
+        roleName: roleName.trim(),
+        description: description || null,
+        departmentId: departmentId || null,
+        landingPage: landingPage || '/dashboard',
+        isActive: true,
+      });
+
+      logger.info('Role created', { roleId: newRole.roleId, roleName });
+
+      res.status(201).json({
+        success: true,
+        data: newRole,
+        message: 'Role created successfully',
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  /**
+   * Update a role
+   * @route PUT /api/v1/auth/roles/:id
+   */
+  updateRole = async (req, res, next) => {
+    try {
+      const roleId = parseInt(req.params.id);
+      const { roleName, description, departmentId, landingPage, isActive } = req.body;
+
+      if (isNaN(roleId)) {
+        throw new AppError('Invalid role ID', 400);
+      }
+
+      // Check if role exists
+      const existingRole = await this.repository.getRoleById(roleId);
+      if (!existingRole) {
+        throw new NotFoundError('Role not found');
+      }
+
+      // If roleName is being changed, check for duplicates
+      if (roleName && roleName.trim() !== existingRole.roleName) {
+        const duplicateRole = await this.repository.getRoleByName(roleName.trim());
+        if (duplicateRole) {
+          throw new AppError('A role with this name already exists', 400);
+        }
+      }
+
+      const updateData = {};
+      if (roleName !== undefined) updateData.roleName = roleName.trim();
+      if (description !== undefined) updateData.description = description;
+      if (departmentId !== undefined) updateData.departmentId = departmentId;
+      if (landingPage !== undefined) updateData.landingPage = landingPage;
+      if (isActive !== undefined) updateData.isActive = isActive;
+
+      const updatedRole = await this.repository.updateRole(roleId, updateData);
+
+      logger.info('Role updated', { roleId, roleName: updatedRole.roleName });
+
+      res.json({
+        success: true,
+        data: updatedRole,
+        message: 'Role updated successfully',
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  /**
+   * Delete a role
+   * @route DELETE /api/v1/auth/roles/:id
+   */
+  deleteRole = async (req, res, next) => {
+    try {
+      const roleId = parseInt(req.params.id);
+
+      if (isNaN(roleId)) {
+        throw new AppError('Invalid role ID', 400);
+      }
+
+      // Check if role exists
+      const existingRole = await this.repository.getRoleById(roleId);
+      if (!existingRole) {
+        throw new NotFoundError('Role not found');
+      }
+
+      // Prevent deletion of system roles
+      if (existingRole.isSystemRole) {
+        throw new ConflictError('Cannot delete system roles');
+      }
+
+      await this.repository.deleteRole(roleId);
+
+      logger.info('Role deleted', { roleId, roleName: existingRole.roleName });
+
+      res.json({
+        success: true,
+        message: 'Role deleted successfully',
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+}
+
+const authorityController = new AuthorityController();
+export default authorityController;
+export { AuthorityController };

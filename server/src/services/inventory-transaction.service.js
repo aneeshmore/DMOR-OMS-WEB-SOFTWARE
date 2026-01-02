@@ -1,0 +1,262 @@
+/**
+ * Inventory Transaction Service
+ *
+ * Centralized service for recording all inventory movements.
+ * This ensures complete audit trail for stock changes.
+ */
+
+import db from '../db/index.js';
+import { inventoryTransactions, products } from '../db/schema/index.js';
+import { eq } from 'drizzle-orm';
+
+export class InventoryTransactionService {
+  /**
+   * Record an inventory transaction
+   * @param {Object} params - Transaction parameters
+   * @param {number} params.productId - Product ID
+   * @param {string} params.transactionType - Type: 'Inward', 'Production Consumption', 'Production Output', 'Dispatch', 'Adjustment', 'Return', 'Discard'
+   * @param {number} params.quantity - Quantity (positive for inward, negative for outward)
+   * @param {number} params.weightKg - Weight in kg (optional)
+   * @param {number} params.densityKgPerL - Density (optional)
+   * @param {string} params.referenceType - Reference type: 'Batch', 'Order', 'Inward', 'Dispatch', 'Manual Adjustment'
+   * @param {number} params.referenceId - Reference ID (optional)
+   * @param {number} params.unitPrice - Unit price (optional)
+   * @param {string} params.notes - Additional notes (optional)
+   * @param {number} params.createdBy - Employee ID who created the transaction
+   * @returns {Promise<Object>} Created transaction record
+   */
+  async recordTransaction({
+    productId,
+    transactionType,
+    quantity,
+    weightKg = null,
+    densityKgPerL = null,
+    referenceType = null,
+    referenceId = null,
+    unitPrice = null,
+    notes = null,
+    createdBy,
+  }) {
+    try {
+      // Get current product balance
+      const product = await db.query.products.findFirst({
+        where: eq(products.productId, productId),
+      });
+
+      if (!product) {
+        throw new Error(`Product with ID ${productId} not found`);
+      }
+
+      // For initial stock transactions, balanceBefore should be 0
+      const balanceBefore =
+        transactionType === 'Initial Stock' ? 0 : product.availableQuantity || 0;
+      const balanceAfter = balanceBefore + quantity;
+
+      // Calculate total value if unit price is provided
+      const totalValue = unitPrice ? Math.abs(quantity) * unitPrice : null;
+
+      // Prepare values with proper type conversion
+      const values = {
+        productId: parseInt(productId),
+        transactionType,
+        quantity: parseInt(quantity),
+        weightKg:
+          weightKg !== null && weightKg !== undefined ? parseFloat(weightKg).toString() : null,
+        densityKgPerL:
+          densityKgPerL !== null && densityKgPerL !== undefined
+            ? parseFloat(densityKgPerL).toString()
+            : null,
+        balanceBefore: parseInt(balanceBefore),
+        balanceAfter: parseInt(balanceAfter),
+        referenceType,
+        referenceId:
+          referenceId !== null && referenceId !== undefined ? parseInt(referenceId) : null,
+        unitPrice:
+          unitPrice !== null && unitPrice !== undefined ? parseFloat(unitPrice).toString() : null,
+        totalValue:
+          totalValue !== null && totalValue !== undefined
+            ? parseFloat(totalValue).toString()
+            : null,
+        notes,
+        createdBy: parseInt(createdBy),
+      };
+
+      // Insert transaction record
+      const [transaction] = await db.insert(inventoryTransactions).values(values).returning();
+
+      console.log(
+        `✅ Inventory transaction recorded: ${transactionType} for product ${productId}, qty: ${quantity}`
+      );
+
+      return transaction;
+    } catch (error) {
+      console.error('Error recording inventory transaction:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Record multiple transactions in a batch
+   * @param {Array<Object>} transactions - Array of transaction objects
+   * @returns {Promise<Array>} Created transaction records
+   */
+  async recordBatchTransactions(transactions) {
+    try {
+      const results = [];
+      for (const txn of transactions) {
+        const result = await this.recordTransaction(txn);
+        results.push(result);
+      }
+      return results;
+    } catch (error) {
+      console.error('Error recording batch transactions:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Record inward transaction (material receipt)
+   */
+  async recordInward({ productId, quantity, weightKg, inwardId, unitPrice, createdBy, notes }) {
+    return this.recordTransaction({
+      productId,
+      transactionType: 'Inward',
+      quantity: Math.abs(quantity), // Ensure positive
+      weightKg,
+      referenceType: 'Inward',
+      referenceId: inwardId,
+      unitPrice,
+      notes,
+      createdBy,
+    });
+  }
+
+  /**
+   * Record production consumption (raw material usage)
+   */
+  async recordProductionConsumption({ productId, quantity, weightKg, batchId, createdBy, notes }) {
+    return this.recordTransaction({
+      productId,
+      transactionType: 'Production Consumption',
+      quantity: -Math.abs(quantity), // Ensure negative
+      weightKg,
+      referenceType: 'Batch',
+      referenceId: batchId,
+      notes,
+      createdBy,
+    });
+  }
+
+  /**
+   * Record production output (finished goods produced)
+   */
+  async recordProductionOutput({ productId, quantity, weightKg, batchId, createdBy, notes }) {
+    return this.recordTransaction({
+      productId,
+      transactionType: 'Production Output',
+      quantity: Math.abs(quantity), // Ensure positive
+      weightKg,
+      referenceType: 'Batch',
+      referenceId: batchId,
+      notes,
+      createdBy,
+    });
+  }
+
+  /**
+   * Record dispatch (order fulfillment)
+   */
+  async recordDispatch({ productId, quantity, weightKg, orderId, createdBy, notes }) {
+    return this.recordTransaction({
+      productId,
+      transactionType: 'Dispatch',
+      quantity: -Math.abs(quantity), // Ensure negative
+      weightKg,
+      referenceType: 'Dispatch',
+      referenceId: orderId,
+      notes,
+      createdBy,
+    });
+  }
+
+  /**
+   * Record manual adjustment
+   */
+  async recordAdjustment({ productId, quantity, weightKg, createdBy, notes }) {
+    return this.recordTransaction({
+      productId,
+      transactionType: 'Adjustment',
+      quantity,
+      weightKg,
+      referenceType: 'Manual Adjustment',
+      notes,
+      createdBy,
+    });
+  }
+
+  /**
+   * Record discard transaction (damaged/expired material)
+   */
+  async recordDiscard({ productId, quantity, discardId, createdBy, notes }) {
+    return this.recordTransaction({
+      productId,
+      transactionType: 'Discard',
+      quantity: -Math.abs(quantity), // Ensure negative
+      referenceType: 'Discard',
+      referenceId: discardId,
+      notes,
+      createdBy,
+    });
+  }
+
+  /**
+   * Backfill historical transactions from existing data
+   * This is useful for populating the table with historical data
+   */
+  async backfillHistoricalTransactions(createdBy = 1) {
+    try {
+      console.log('🔄 Starting historical transaction backfill...');
+
+      // Get all products with their current quantities
+      const allProducts = await db.query.products.findMany();
+
+      const transactions = [];
+
+      for (const product of allProducts) {
+        if (product.availableQuantity && product.availableQuantity > 0) {
+          // Create an initial stock transaction for existing inventory
+          const weightKg = product.availableWeightKg ? parseFloat(product.availableWeightKg) : null;
+
+          transactions.push({
+            productId: product.productId,
+            transactionType: 'Initial Stock',
+            quantity: product.availableQuantity,
+            weightKg,
+            referenceType: 'Manual Adjustment',
+            notes: 'Historical data backfill - initial stock',
+            createdBy,
+          });
+        }
+      }
+
+      console.log(`📊 Found ${transactions.length} products with existing inventory`);
+
+      if (transactions.length > 0) {
+        // Insert all transactions
+        for (const txn of transactions) {
+          await this.recordTransaction(txn);
+        }
+        console.log(`✅ Successfully backfilled ${transactions.length} historical transactions`);
+      } else {
+        console.log('ℹ️ No historical transactions to backfill');
+      }
+
+      return transactions.length;
+    } catch (error) {
+      console.error('Error backfilling historical transactions:', error);
+      throw error;
+    }
+  }
+}
+
+export default new InventoryTransactionService();

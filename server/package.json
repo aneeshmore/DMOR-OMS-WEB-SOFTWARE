@@ -1,0 +1,63 @@
+{
+  "name": "dmor-paints-server",
+  "version": "1.0.0",
+  "description": "DMOR Paints Management System - Backend API",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "nodemon src/index.js",
+    "start": "node src/index.js",
+    "test": "jest",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:push": "drizzle-kit push",
+    "db:studio": "drizzle-kit studio",
+    "db:seed": "node src/db/scripts/seed.js",
+    "db:seed:reset": "node src/db/scripts/seed.js --reset",
+    "db:seed:excel": "node src/db/scripts/seed-excel.js",
+    "db:clear": "node src/db/scripts/clear-seed-data.js",
+    "db:resetTables": "node src/db/scripts/resetTables.js",
+    "db:drop": "node src/db/scripts/dropSchema.js",
+    "db:init": "node src/db/scripts/dropSchema.js && drizzle-kit push --force && node src/db/scripts/seed.js --reset",
+    "schema:generate": "node src/db/schema/generate-schema-files.js",
+    "db:seed:departments": "node scripts/seed-departments-roles.js",
+    "db:seed:admin": "node src/db/scripts/create-admin.js",
+    "sync:permissions": "cd ../client && node scripts/extract-permissions.js && cd ../server && node src/db/scripts/sync-permissions.js"
+  },
+  "keywords": [
+    "paint",
+    "erp",
+    "manufacturing"
+  ],
+  "packageManager": "pnpm@10.22.0",
+  "author": "DMOR Paints",
+  "license": "MIT",
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "compression": "^1.7.4",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "dotenv": "^16.6.1",
+    "drizzle-orm": "^0.45.0",
+    "drizzle-seed": "^0.3.1",
+    "express": "^4.18.2",
+    "express-rate-limit": "^8.2.1",
+    "express-validator": "^7.0.1",
+    "helmet": "^7.2.0",
+    "jsonwebtoken": "^9.0.2",
+    "morgan": "^1.10.0",
+    "pg": "^8.16.3",
+    "winston": "^3.18.3",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "drizzle-kit": "^0.31.8",
+    "esbuild": "^0.27.2",
+    "eslint": "^9.39.1",
+    "nodemon": "^3.1.11",
+    "tsx": "^4.21.0",
+    "xlsx": "^0.18.5"
+  }
+}

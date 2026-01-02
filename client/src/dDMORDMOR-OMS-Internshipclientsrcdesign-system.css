@@ -1,0 +1,17 @@
+/* Sidebar Specific Scrollbar */
+.sidebar-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.sidebar-scrollbar::-webkit-scrollbar-track {
+  background: var(--color-neutral-800);
+}
+
+.sidebar-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--color-neutral-600);
+  border-radius: 0;
+}
+
+.sidebar-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: var(--color-neutral-500);
+}

@@ -1,0 +1,1018 @@
+import { useState, useEffect } from 'react';
+import { X, FileDown, Printer } from 'lucide-react';
+import { productionManagerApi } from '../api/productionManagerApi';
+import { showToast } from '@/utils/toast';
+import { Button, Modal } from '@/components/ui';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+
+interface BatchReportModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  batchId: number;
+  batchNo: string;
+  reportType: 'batch-chart' | 'completion-chart';
+}
+
+export default function BatchReportModal({
+  isOpen,
+  onClose,
+  batchId,
+  batchNo,
+  reportType,
+}: BatchReportModalProps) {
+  const [isLoading, setIsLoading] = useState(true);
+  const [batchData, setBatchData] = useState<any>(null);
+  const [materials, setMaterials] = useState<any[]>([]);
+  const [orders, setOrders] = useState<any[]>([]);
+  const [relatedSkus, setRelatedSkus] = useState<any[]>([]); // All SKUs for this master product
+
+  useEffect(() => {
+    if (!isOpen || !batchId) return;
+
+    const fetchData = async () => {
+      setIsLoading(true);
+      try {
+        const data = await productionManagerApi.getBatchDetails(batchId);
+        setBatchData(data.batch);
+        setMaterials(data.materials || []);
+        setOrders(data.orders || []);
+        setRelatedSkus(data.relatedSkus || []); // Get ALL SKUs for this master product
+        console.log('BatchReportModal: relatedSkus fetched:', data.relatedSkus);
+      } catch (error) {
+        console.error('Failed to fetch batch data:', error);
+        showToast.error('Failed to load batch details');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [isOpen, batchId]);
+
+  // Duration Calculation Helper
+  const calculateDuration = (startStr: string, endStr: string) => {
+    if (!startStr || !endStr) return '-';
+    const start = new Date(startStr);
+    const end = new Date(endStr);
+    const diffMs = end.getTime() - start.getTime();
+    if (diffMs <= 0) return '-';
+
+    const totalMinutes = Math.floor(diffMs / 60000);
+    const days = Math.floor(totalMinutes / (24 * 60));
+    const hours = Math.floor((totalMinutes % (24 * 60)) / 60);
+    const mins = totalMinutes % 60;
+
+    const parts = [];
+    if (days > 0) parts.push(`${days}d`);
+    if (hours > 0) parts.push(`${hours}h`);
+    if (mins > 0 || parts.length === 0) parts.push(`${mins}m`);
+
+    return parts.join(' ');
+  };
+
+  // Sort materials by sequence first
+  const sortedMaterials = [...materials].sort(
+    (a: any, b: any) => (a.batchMaterial?.sequence || 0) - (b.batchMaterial?.sequence || 0)
+  );
+
+  // Get the highest sequence number from raw materials
+  const maxRawMaterialSequence = sortedMaterials.reduce(
+    (max: number, m: any) => Math.max(max, m.batchMaterial?.sequence || 0),
+    0
+  );
+
+  // Extract packaging materials from orders
+  const packagingMaterials = orders
+    .filter((o: any) => o.packagingMasterProductName) // Only if packaging exists
+    .map((o: any, idx: number) => {
+      // Use the flattened fields from backend
+      const unitPrice = parseFloat(o.packagingPurchaseCost || 0);
+      const qty = Number(o.batchProduct?.plannedUnits) || 0;
+      return {
+        isPackaging: true,
+        sequence: maxRawMaterialSequence + idx + 1,
+        materialName: o.packagingMasterProductName,
+        requiredQuantity: qty,
+        unitPrice: unitPrice,
+        total: unitPrice * qty,
+        waitingTime: 0,
+        isAdditional: false,
+      };
+    });
+
+  // Keep raw materials separate from packaging
+  const rawMaterialsOnly = sortedMaterials.map((m: any) => ({
+    isPackaging: false,
+    sequence: m.batchMaterial?.sequence || 0,
+    materialName: m.masterProduct?.masterProductName || m.material?.productName || 'Unknown',
+    requiredQuantity: parseFloat(m.batchMaterial?.requiredQuantity) || 0,
+    waitingTime: parseInt(m.batchMaterial?.waitingTime) || 0,
+    isAdditional: m.isAdditional === true || m.batchMaterial?.isAdditional === true,
+    batchMaterial: m.batchMaterial,
+    masterProduct: m.masterProduct,
+    material: m.material,
+  }));
+
+  // For backward compatibility, keep allMaterials for totals
+  const allMaterials = [...rawMaterialsOnly, ...packagingMaterials];
+
+  const totalPackages = orders.reduce(
+    (sum: number, o: any) => sum + (Number(o.batchProduct?.plannedUnits) || 0),
+    0
+  );
+
+  const totalPlannedRawMaterials = rawMaterialsOnly.reduce(
+    (sum: number, m: any) => sum + (m.requiredQuantity || 0),
+    0
+  );
+  const totalWait = rawMaterialsOnly.reduce((sum: number, m: any) => sum + (m.waitingTime || 0), 0);
+  const totalPackagingCost = packagingMaterials.reduce(
+    (sum: number, m: any) => sum + (m.total || 0),
+    0
+  );
+
+  // Export to PDF
+  const handleExportPDF = () => {
+    if (!batchData) return;
+
+    const doc = new jsPDF();
+    const batch = batchData;
+
+    // Full Page Border
+    doc.setLineWidth(0.5);
+    doc.rect(5, 5, 200, 287);
+
+    // Header
+    doc.setFontSize(16);
+    doc.text('DMOR PAINTS', 105, 15, { align: 'center' });
+    doc.line(14, 18, 196, 18);
+
+    doc.setFontSize(10);
+
+    if (reportType === 'batch-chart') {
+      // Batch Chart Report
+      doc.text(`Batch No : ${batch.batchNo} / ${batch.masterProductName || ''}`, 14, 25);
+      doc.text(`Date : ${new Date(batch.scheduledDate).toLocaleDateString()}`, 100, 25);
+      doc.text(`Supervisor : Mr. ${batch.supervisorName || 'N/A'}`, 14, 32);
+      doc.text(`Start Date-Time : -`, 100, 31);
+      doc.text(`End Date-Time : -`, 100, 37);
+      doc.text(`Labours : ${batch.labourNames || 'N/A'}`, 14, 38);
+      doc.text(`Density : ${batch.density ? Number(batch.density).toFixed(3) : '-'}`, 14, 44);
+      doc.text(`Water % : ${batch.waterPercentage || '0.00'}`, 14, 50);
+      doc.text(`Production Qty : ${batch.plannedQuantity}`, 14, 56);
+    } else {
+      // Completion Chart Report - Reorganized Layout
+      // LEFT SIDE: Batch info + Date/Time fields
+      doc.text(`Batch No : ${batch.batchNo} / ${batch.masterProductName || ''}`, 14, 25);
+      doc.text(`Supervisor : Mr. ${batch.supervisorName || 'N/A'}`, 14, 32);
+      doc.text(`Labours : ${batch.labourNames || 'N/A'}`, 14, 38);
+      doc.text(`Date : ${new Date(batch.scheduledDate).toLocaleDateString()}`, 14, 44);
+      doc.text(
+        `Start Date-Time : ${batch.startedAt ? new Date(batch.startedAt).toLocaleString() : '-'}`,
+        14,
+        50
+      );
+      doc.text(
+        `End Date-Time : ${batch.completedAt ? new Date(batch.completedAt).toLocaleString() : '-'}`,
+        14,
+        56
+      );
+      const duration = calculateDuration(batch.startedAt, batch.completedAt);
+      doc.text(`Total Time : ${duration}`, 14, 62);
+
+      // RIGHT SIDE: Quality & Variance Analysis Table
+      // Calculate variance values
+      const stdDensity = batch.fgDensity
+        ? parseFloat(batch.fgDensity)
+        : batch.density
+          ? parseFloat(batch.density)
+          : 0;
+      const actDensity = batch.actualDensity ? parseFloat(batch.actualDensity) : 0;
+      const densityVariance = actDensity - stdDensity;
+
+      const stdViscosity = batch.viscosity ? parseFloat(batch.viscosity) : 0;
+      const actViscosity = batch.actualViscosity ? parseFloat(batch.actualViscosity) : 0;
+      const viscosityVariance = actViscosity - stdViscosity;
+
+      // Calculate total weight from actual quantity and density
+      const actualQty = batch.actualQuantity ? parseFloat(batch.actualQuantity) : 0;
+      const stdTotalWeight = batch.plannedQuantity
+        ? parseFloat(batch.plannedQuantity) * stdDensity
+        : 0;
+      const actTotalWeight = actualQty * actDensity;
+      const totalWeightVariance = actTotalWeight - stdTotalWeight;
+
+      // Draw Quality & Variance Analysis Table on right side
+      autoTable(doc, {
+        startY: 22,
+        margin: { left: 110 },
+        head: [['Parameter', 'Standard / Theoretical', 'Actual', 'Variance']],
+        body: [
+          ['Density', stdDensity.toFixed(2), actDensity.toFixed(2), densityVariance.toFixed(2)],
+          [
+            'Viscosity',
+            stdViscosity > 0 ? stdViscosity.toString() : '-',
+            actViscosity > 0 ? actViscosity.toString() : '-',
+            viscosityVariance !== 0 ? viscosityVariance.toFixed(2) : '-',
+          ],
+          [
+            'Total Weight (Kg)',
+            stdTotalWeight.toFixed(2),
+            actTotalWeight.toFixed(2),
+            totalWeightVariance.toFixed(2),
+          ],
+        ],
+        theme: 'grid',
+        styles: { fontSize: 8, cellPadding: 2, minCellHeight: 6, lineColor: 0, lineWidth: 0.2 },
+        headStyles: { fillColor: [220, 220, 220], textColor: 0, fontStyle: 'bold', fontSize: 7 },
+        columnStyles: {
+          0: { cellWidth: 25 },
+          1: { cellWidth: 30, halign: 'right' },
+          2: { cellWidth: 18, halign: 'right' },
+          3: { cellWidth: 18, halign: 'right' },
+        },
+        tableWidth: 91,
+      });
+    }
+
+    // Raw Materials Table (Only raw materials, no packaging)
+    // Separate regular materials from additional materials
+    const regularMaterials = rawMaterialsOnly.filter(
+      (m: any) => !m.isAdditional && !m.batchMaterial?.isAdditional
+    );
+    const additionalMaterials = rawMaterialsOnly.filter(
+      (m: any) => m.isAdditional || m.batchMaterial?.isAdditional
+    );
+
+    // Regular materials data (with sequence)
+    const regularBomData = regularMaterials.map((m: any, idx: number) => [
+      m.sequence || idx + 1,
+      m.materialName,
+      m.waitingTime ? `${m.waitingTime}m` : '', // Blank instead of -
+      m.requiredQuantity.toFixed(3),
+      reportType === 'completion-chart'
+        ? m.batchMaterial?.actualQuantity
+          ? parseFloat(m.batchMaterial.actualQuantity).toFixed(3)
+          : ''
+        : '',
+    ]);
+
+    // Additional materials data (shown at bottom, sequence continues)
+    const additionalBomData = additionalMaterials.map((m: any, idx: number) => [
+      regularMaterials.length + idx + 1, // Continue sequence after regular materials
+      m.materialName,
+      '', // Blank - no wait time for additional
+      m.requiredQuantity.toFixed(3),
+      reportType === 'completion-chart'
+        ? m.batchMaterial?.actualQuantity
+          ? parseFloat(m.batchMaterial.actualQuantity).toFixed(3)
+          : ''
+        : '',
+    ]);
+
+    // Combined BOM data: regular materials first, then additional at bottom
+    const bomData = [...regularBomData, ...additionalBomData];
+
+    // Track which rows are additional for bold styling
+    const additionalStartIndex = regularMaterials.length;
+
+    // Packaging Materials Data
+    const packagingData = packagingMaterials.map((p: any) => [
+      p.materialName,
+      p.unitPrice.toFixed(2),
+      p.requiredQuantity.toString(),
+      p.total.toFixed(2),
+    ]);
+
+    // Prepare Product Data (Right Side) - Show SKUs with production data
+    // For completed batches, use orders directly (they have actual production data with product names)
+    // For scheduled/in-progress batches, use relatedSkus to show all possible SKUs
+    let productData: (string | number)[][] = [];
+
+    if (reportType === 'completion-chart' && orders.length > 0) {
+      // For completed batches, use orders directly - this has the actual SKU data
+      productData = orders.map((o: any) => {
+        const productName = o.product?.productName || 'Unknown';
+        const capacityLtr = parseFloat(o.packagingCapacity || '0');
+        const fillingDensity =
+          parseFloat(o.product?.fillingDensity || '0') || parseFloat(batch.fgDensity || '0');
+        const plannedQty = parseFloat(o.batchProduct?.plannedUnits || '0');
+        const actualQty = parseFloat(o.batchProduct?.producedUnits || '0');
+        const ltr = actualQty > 0 ? actualQty * capacityLtr : plannedQty * capacityLtr;
+        const kg = ltr * fillingDensity;
+
+        return [
+          productName,
+          plannedQty > 0 ? plannedQty.toString() : '0',
+          actualQty > 0 ? actualQty.toString() : '',
+          ltr > 0 ? ltr.toFixed(3) : '',
+          kg > 0 ? kg.toFixed(3) : '',
+        ];
+      });
+    } else {
+      // For non-completed batches, use relatedSkus with order lookup
+      const ordersByProductId = new Map<number, any>();
+      orders.forEach((o: any) => {
+        const productId = o.batchProduct?.productId || o.product?.productId;
+        if (productId) {
+          ordersByProductId.set(productId, o);
+        }
+      });
+
+      // Use ALL SKUs from relatedSkus, with qty = 0 if no order
+      productData = relatedSkus.map((sku: any) => {
+        const order = ordersByProductId.get(sku.productId);
+        const productName = sku.productName || 'Unknown';
+        const plannedQty = parseFloat(order?.batchProduct?.plannedUnits || '0');
+        const actualQty = parseFloat(order?.batchProduct?.producedUnits || '0');
+
+        const capacityLtr = parseFloat(order?.packagingCapacity || '0');
+        const fillingDensity =
+          parseFloat(order?.product?.fillingDensity || '0') || parseFloat(batch.fgDensity || '0');
+
+        const ltr = plannedQty * capacityLtr;
+        const kg = ltr * fillingDensity;
+
+        return [
+          productName,
+          plannedQty > 0 ? plannedQty.toString() : '0',
+          actualQty > 0 ? actualQty.toString() : '',
+          ltr > 0 ? ltr.toFixed(3) : '',
+          kg > 0 ? kg.toFixed(3) : '',
+        ];
+      });
+
+      // Fallback: if no relatedSkus, use orders
+      if (relatedSkus.length === 0 && orders.length > 0) {
+        productData = orders.map((o: any) => {
+          const capacityLtr = parseFloat(o.packagingCapacity || '0');
+          const fillingDensity =
+            parseFloat(o.product?.fillingDensity || '0') || parseFloat(batch.fgDensity || '0');
+          const plannedQty = parseFloat(o.batchProduct?.plannedUnits || '0');
+          const actualQty = parseFloat(o.batchProduct?.producedUnits || '0');
+          const ltr = plannedQty * capacityLtr;
+          const kg = ltr * fillingDensity;
+          return [
+            o.product?.productName || 'Unknown',
+            plannedQty > 0 ? plannedQty.toString() : '0',
+            actualQty > 0 ? actualQty.toString() : '',
+            ltr > 0 ? ltr.toFixed(3) : '',
+            kg > 0 ? kg.toFixed(3) : '',
+          ];
+        });
+      }
+    }
+
+    // No padding - show only actual SKUs
+    // But keep BOM padding for empty check rows
+    while (bomData.length < Math.max(bomData.length, 5)) {
+      bomData.push(['', '', '', '', '']);
+    }
+
+    // Calculate totals for Product Table
+    const totalLtr = productData.reduce((sum, row) => sum + (parseFloat(row[3] as string) || 0), 0);
+    const totalKg = productData.reduce((sum, row) => sum + (parseFloat(row[4] as string) || 0), 0);
+
+    // Draw Material Table (Left Side)
+    autoTable(doc, {
+      startY: 60,
+      head: [
+        reportType === 'batch-chart'
+          ? ['Seq', 'Product', 'Wait', 'UseQty', 'Check']
+          : ['Seq', 'Product', 'Wait', 'Planned', 'Actual'],
+      ],
+      body: bomData,
+      foot: [
+        [
+          { content: 'Total', colSpan: 3, styles: { halign: 'right', fontStyle: 'bold' } },
+          { content: totalPlannedRawMaterials.toFixed(3), styles: { fontStyle: 'bold' } },
+          '',
+        ],
+      ],
+      theme: 'grid',
+      styles: { fontSize: 8, cellPadding: 2, minCellHeight: 6, lineColor: 0, lineWidth: 0.2 },
+      headStyles: { fillColor: [220, 220, 220], textColor: 0, fontStyle: 'bold' },
+      margin: { left: 14, right: 110 }, // Width approx 86
+      tableWidth: 86,
+      columnStyles: {
+        0: { cellWidth: 8 }, // Seq
+        1: { cellWidth: 41 }, // Product (Wider)
+        2: { cellWidth: 10, halign: 'center' }, // Wait
+        3: { cellWidth: 15, halign: 'right' }, // UseQty
+        4: { cellWidth: 12, halign: 'right' }, // Check (Smaller)
+      },
+      didParseCell: data => {
+        if (data.section === 'body') {
+          const rowIndex = data.row.index;
+          // Apply bold styling to additional materials (rows after additionalStartIndex)
+          if (rowIndex >= additionalStartIndex && additionalStartIndex < bomData.length) {
+            data.cell.styles.fontStyle = 'bold';
+          }
+        }
+      },
+    });
+
+    const leftTableFinalY = (doc as any).lastAutoTable.finalY;
+
+    // Draw Product Table (Right Side)
+    autoTable(doc, {
+      startY: 60,
+      head: [['Shade', 'QTY', 'ACT QTY', 'LTR', 'KG']],
+      body: productData,
+      foot: [
+        [
+          { content: 'Total', styles: { halign: 'right', fontStyle: 'bold' } },
+          { content: totalPackages.toString(), styles: { fontStyle: 'bold', halign: 'center' } },
+          { content: '', styles: { fontStyle: 'bold' } },
+          { content: totalLtr.toFixed(3), styles: { fontStyle: 'bold' } },
+          { content: totalKg.toFixed(3), styles: { fontStyle: 'bold' } },
+        ],
+      ],
+      theme: 'grid',
+      styles: { fontSize: 8, cellPadding: 2, minCellHeight: 6, lineColor: 0, lineWidth: 0.2 },
+      headStyles: { fillColor: [220, 220, 220], textColor: 0, fontStyle: 'bold' },
+      margin: { left: 110 },
+      tableWidth: 86,
+    });
+
+    const rightTableFinalY = (doc as any).lastAutoTable.finalY;
+    let finalY = Math.max(leftTableFinalY, rightTableFinalY);
+
+    // Additional Materials - Now Merged into main table logic with bolditalic
+    // if (additionalMaterials.length > 0) { ... } -> Removed
+
+    // Production Summary Table (SKU-level with APP QTY)
+    if (relatedSkus.length > 0) {
+      // Build orders map for quick lookup
+      const ordersMapPdf = new Map<number, any>();
+      orders.forEach((o: any) => {
+        const productId = o.batchProduct?.productId || o.product?.productId;
+        if (productId) ordersMapPdf.set(productId, o);
+      });
+
+      // Prepare production summary data
+      const prodSummaryData = relatedSkus.map((sku: any) => {
+        const order = ordersMapPdf.get(sku.productId);
+        const productName = sku.productName || 'Unknown';
+        const appQty = parseFloat(sku.availableQuantity || '0');
+        const batchQty = parseFloat(order?.batchProduct?.plannedUnits || '0');
+
+        return [
+          productName,
+          appQty > 0 ? appQty.toFixed(2) : '0.00',
+          batchQty > 0 ? batchQty.toString() : '',
+          '', // DISPATCH QTY - empty
+          '', // TOTAL - empty
+          '', // ACTUAL QTY - empty
+          '', // DIFFERENCE - empty
+        ];
+      });
+
+      autoTable(doc, {
+        startY: finalY + 5,
+        head: [
+          ['Product', 'APP QTY', 'BATCH QTY', 'DISPATCH QTY', 'TOTAL', 'ACTUAL QTY', 'DIFFERENCE'],
+        ],
+        body: prodSummaryData,
+        theme: 'grid',
+        styles: { fontSize: 8, cellPadding: 1.5, minCellHeight: 6, lineColor: 0, lineWidth: 0.2 },
+        headStyles: {
+          fillColor: [220, 220, 220],
+          textColor: 0,
+          fontStyle: 'bold',
+          halign: 'center',
+        },
+        columnStyles: {
+          0: { cellWidth: 50 },
+          1: { cellWidth: 20, halign: 'center' },
+          2: { cellWidth: 22, halign: 'center' },
+          3: { cellWidth: 25, halign: 'center' },
+          4: { cellWidth: 18, halign: 'center' },
+          5: { cellWidth: 22, halign: 'center' },
+          6: { cellWidth: 23, halign: 'center' },
+        },
+        margin: { left: 14, right: 14, top: 20, bottom: 30 },
+        showHead: 'everyPage', // Repeat header on every page
+        pageBreak: 'auto', // Automatic page breaks
+        rowPageBreak: 'avoid', // Try to avoid breaking rows across pages
+      });
+
+      finalY = (doc as any).lastAutoTable.finalY;
+    }
+
+    // Separator line
+    doc.setLineWidth(0.2);
+    doc.line(14, finalY + 10, 196, finalY + 10);
+
+    // Footer
+    doc.text('Production Remark :', 14, finalY + 15);
+    if (reportType === 'completion-chart' && batch.productionRemarks) {
+      doc.text(batch.productionRemarks, 14, finalY + 22);
+    }
+
+    doc.text('Labours Sign :-', 40, finalY + 40);
+    doc.text(batch.labourNames || '', 40, finalY + 46);
+
+    doc.text('Superviser Sign :-', 150, finalY + 40);
+    doc.text(`Mr. ${batch.supervisorName || ''}`, 150, finalY + 46);
+
+    const fileName =
+      reportType === 'batch-chart'
+        ? `Batch_${batch.batchNo}.pdf`
+        : `Completion_${batch.batchNo}.pdf`;
+
+    doc.save(fileName);
+    showToast.success('PDF Downloaded!');
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title={`${reportType === 'batch-chart' ? 'Batch Chart' : 'Completion Report'} - ${batchNo}`}
+      size="lg"
+    >
+      <div className="bg-white p-4 md:p-8 rounded-lg shadow-sm border border-gray-200 w-full mx-auto printable-content text-black">
+        {isLoading ? (
+          <div className="flex items-center justify-center h-40">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[var(--primary)]"></div>
+          </div>
+        ) : batchData ? (
+          <div className="border-2 border-gray-800 p-6 min-h-[600px] bg-white text-black">
+            {/* Header */}
+            <div className="text-center mb-4">
+              <h1 className="text-2xl font-bold">DMOR PAINTS</h1>
+              <div className="border-b-2 border-gray-800 mt-2"></div>
+            </div>
+
+            {/* Batch Info */}
+            <div className="grid grid-cols-2 gap-4 mb-6 text-sm">
+              <div>
+                <p>
+                  <span className="font-semibold">Batch No:</span> {batchData.batchNo}
+                </p>
+                <p>
+                  <span className="font-semibold">Product Name:</span>{' '}
+                  {batchData.masterProductName || 'N/A'}
+                </p>
+                <p>
+                  <span className="font-semibold">Supervisor:</span> Mr.{' '}
+                  {batchData.supervisorName || 'N/A'}
+                </p>
+                <p>
+                  <span className="font-semibold">Labours:</span> {batchData.labourNames || 'N/A'}
+                </p>
+                {reportType === 'batch-chart' ? (
+                  <>
+                    <p>
+                      <span className="font-semibold">Density:</span>{' '}
+                      {batchData.density ? Number(batchData.density).toFixed(3) : '-'}
+                    </p>
+                    <p>
+                      <span className="font-semibold">Water %:</span>{' '}
+                      {batchData.waterPercentage || '0.00'}
+                    </p>
+                    <p>
+                      <span className="font-semibold">Production Qty:</span>{' '}
+                      {batchData.plannedQuantity}
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p>
+                      <span className="font-semibold">Date:</span>{' '}
+                      {new Date(batchData.scheduledDate).toLocaleDateString()}
+                    </p>
+                    <p>
+                      <span className="font-semibold">Total Time:</span>{' '}
+                      {calculateDuration(batchData.startedAt, batchData.completedAt)}
+                    </p>
+                  </>
+                )}
+              </div>
+              <div className="text-right">
+                {reportType === 'batch-chart' ? (
+                  <>
+                    <p>
+                      <span className="font-semibold">Date:</span>{' '}
+                      {new Date(batchData.scheduledDate).toLocaleDateString()}
+                    </p>
+                  </>
+                ) : (
+                  /* Quality & Variance Analysis Table for Completion Chart */
+                  <div className="text-left">
+                    <h4 className="font-bold text-xs mb-1 text-gray-700">
+                      Quality & Variance Analysis
+                    </h4>
+                    <table className="w-full border-collapse border border-gray-600 text-xs">
+                      <thead>
+                        <tr className="bg-gray-200">
+                          <th className="border border-gray-600 px-1 py-0.5">Parameter</th>
+                          <th className="border border-gray-600 px-1 py-0.5">Standard</th>
+                          <th className="border border-gray-600 px-1 py-0.5">Actual</th>
+                          <th className="border border-gray-600 px-1 py-0.5">Variance</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(() => {
+                          const stdDensity = batchData.fgDensity
+                            ? parseFloat(batchData.fgDensity)
+                            : batchData.density
+                              ? parseFloat(batchData.density)
+                              : 0;
+                          const actDensity = batchData.actualDensity
+                            ? parseFloat(batchData.actualDensity)
+                            : 0;
+                          const densityVariance = actDensity - stdDensity;
+
+                          const stdViscosity = batchData.viscosity
+                            ? parseFloat(batchData.viscosity)
+                            : 0;
+                          const actViscosity = batchData.actualViscosity
+                            ? parseFloat(batchData.actualViscosity)
+                            : 0;
+                          const viscosityVariance = actViscosity - stdViscosity;
+
+                          const actualQty = batchData.actualQuantity
+                            ? parseFloat(batchData.actualQuantity)
+                            : 0;
+                          const stdTotalWeight = batchData.plannedQuantity
+                            ? parseFloat(batchData.plannedQuantity) * stdDensity
+                            : 0;
+                          const actTotalWeight = actualQty * actDensity;
+                          const totalWeightVariance = actTotalWeight - stdTotalWeight;
+
+                          return (
+                            <>
+                              <tr>
+                                <td className="border border-gray-600 px-1 py-0.5">Density</td>
+                                <td className="border border-gray-600 px-1 py-0.5 text-right">
+                                  {stdDensity.toFixed(2)}
+                                </td>
+                                <td className="border border-gray-600 px-1 py-0.5 text-right">
+                                  {actDensity.toFixed(2)}
+                                </td>
+                                <td className="border border-gray-600 px-1 py-0.5 text-right">
+                                  {densityVariance.toFixed(2)}
+                                </td>
+                              </tr>
+                              <tr>
+                                <td className="border border-gray-600 px-1 py-0.5">Viscosity</td>
+                                <td className="border border-gray-600 px-1 py-0.5 text-right">
+                                  {stdViscosity > 0 ? stdViscosity : '-'}
+                                </td>
+                                <td className="border border-gray-600 px-1 py-0.5 text-right">
+                                  {actViscosity > 0 ? actViscosity : '-'}
+                                </td>
+                                <td className="border border-gray-600 px-1 py-0.5 text-right">
+                                  {viscosityVariance.toFixed(2)}
+                                </td>
+                              </tr>
+                              <tr>
+                                <td className="border border-gray-600 px-1 py-0.5">
+                                  Total Weight (Kg)
+                                </td>
+                                <td className="border border-gray-600 px-1 py-0.5 text-right">
+                                  {stdTotalWeight.toFixed(2)}
+                                </td>
+                                <td className="border border-gray-600 px-1 py-0.5 text-right">
+                                  {actTotalWeight.toFixed(2)}
+                                </td>
+                                <td className="border border-gray-600 px-1 py-0.5 text-right">
+                                  {totalWeightVariance.toFixed(2)}
+                                </td>
+                              </tr>
+                            </>
+                          );
+                        })()}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Main Content Areas: Side-by-Side Tables */}
+            <div className="flex gap-4 items-start">
+              {/* Left Side: Materials Table */}
+              <div className="flex-1">
+                <table className="w-full border-collapse border border-gray-800 text-sm mb-4">
+                  <thead>
+                    <tr className="bg-gray-200">
+                      <th className="border border-gray-800 px-2 py-1 w-8">Seq</th>
+                      <th className="border border-gray-800 px-2 py-1">Product</th>
+                      <th className="border border-gray-800 px-2 py-1 w-12">Wait</th>
+                      <th className="border border-gray-800 px-2 py-1 w-16">
+                        {reportType === 'batch-chart' ? 'UseQty' : 'Planned'}
+                      </th>
+                      <th className="border border-gray-800 px-2 py-1 w-16">
+                        {reportType === 'batch-chart' ? 'Check' : 'Actual'}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[var(--border)]">
+                    {/* Regular materials first */}
+                    {rawMaterialsOnly
+                      .filter(
+                        (m: any) =>
+                          !m.isAdditional &&
+                          !m.batchMaterial?.isAdditional &&
+                          parseFloat(m.requiredQuantity || '0') > 0
+                      )
+                      .map((m: any, idx: number) => (
+                        <tr key={idx} className="hover:bg-[var(--surface-hover)]">
+                          <td className="px-2 py-1 text-xs border border-gray-800 text-center">
+                            {m.sequence || idx + 1}
+                          </td>
+                          <td className="px-2 py-1 text-xs border border-gray-800">
+                            {m.materialName}
+                          </td>
+                          <td className="px-2 py-1 text-xs border border-gray-800 text-center">
+                            {m.waitingTime ? `${m.waitingTime}m` : ''}
+                          </td>
+                          <td className="px-2 py-1 text-xs border border-gray-800 text-right">
+                            {m.requiredQuantity.toFixed(3)}
+                          </td>
+                          <td className="px-2 py-1 text-xs border border-gray-800 text-right">
+                            {reportType === 'completion-chart' && m.batchMaterial?.actualQuantity
+                              ? parseFloat(m.batchMaterial.actualQuantity).toFixed(3)
+                              : ''}
+                          </td>
+                        </tr>
+                      ))}
+                    {/* Additional materials at bottom in bold */}
+                    {rawMaterialsOnly
+                      .filter(
+                        (m: any) =>
+                          m.isAdditional ||
+                          m.batchMaterial?.isAdditional ||
+                          parseFloat(m.requiredQuantity || '0') <= 0
+                      )
+                      .map((m: any, idx: number) => {
+                        const regularCount = rawMaterialsOnly.filter(
+                          (rm: any) =>
+                            !rm.isAdditional &&
+                            !rm.batchMaterial?.isAdditional &&
+                            parseFloat(rm.requiredQuantity || '0') > 0
+                        ).length;
+                        return (
+                          <tr key={`extra-${idx}`} className="hover:bg-[var(--surface-hover)]">
+                            <td className="px-2 py-1 text-xs border border-gray-800 text-center font-bold">
+                              {regularCount + idx + 1}
+                            </td>
+                            <td className="px-2 py-1 text-xs border border-gray-800 font-bold">
+                              {m.materialName}
+                            </td>
+                            <td className="px-2 py-1 text-xs border border-gray-800 text-center font-bold"></td>
+                            <td className="px-2 py-1 text-xs border border-gray-800 text-right font-bold">
+                              {m.requiredQuantity.toFixed(3)}
+                            </td>
+                            <td className="px-2 py-1 text-xs border border-gray-800 text-right font-bold">
+                              {reportType === 'completion-chart' && m.batchMaterial?.actualQuantity
+                                ? parseFloat(m.batchMaterial.actualQuantity).toFixed(3)
+                                : ''}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-teal-500 text-white font-bold">
+                      <td colSpan={2} className="border border-gray-800 px-2 py-1 text-right">
+                        Total
+                      </td>
+                      <td className="border border-gray-800 px-2 py-1 text-center">{totalWait}m</td>
+                      <td className="border border-gray-800 px-2 py-1 text-right">
+                        {totalPlannedRawMaterials.toFixed(3)}
+                      </td>
+                      <td className="border border-gray-800 px-2 py-1"></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+
+              {/* Right Side: Products (SKUs) Table */}
+              <div className="flex-1">
+                <table className="w-full border-collapse border border-gray-800 text-sm mb-4">
+                  <thead>
+                    <tr className="bg-gray-200">
+                      <th className="border border-gray-800 px-2 py-1">Shade</th>
+                      <th className="border border-gray-800 px-2 py-1 w-12">QTY</th>
+                      <th className="border border-gray-800 px-2 py-1 w-16">ACT QTY</th>
+                      <th className="border border-gray-800 px-2 py-1 w-12">LTR</th>
+                      <th className="border border-gray-800 px-2 py-1 w-16">KG</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(() => {
+                      // For completed batches, use orders directly (they have actual production data with product names)
+                      // For scheduled/in-progress batches, use relatedSkus to show all possible SKUs
+                      if (batchData.status === 'Completed' && orders.length > 0) {
+                        // Use orders directly for completed batches - this has the actual SKU data
+                        return orders.map((o: any, idx: number) => {
+                          const productName = o.product?.productName || 'Unknown';
+                          const capacityLtr = parseFloat(o.packagingCapacity || '0');
+                          const fillingDensity =
+                            parseFloat(o.product?.fillingDensity || '0') ||
+                            parseFloat(batchData.fgDensity || '0');
+
+                          const plannedQty = parseFloat(o.batchProduct?.plannedUnits || '0');
+                          const actualQty = parseFloat(o.batchProduct?.producedUnits || '0');
+                          const ltr =
+                            actualQty > 0 ? actualQty * capacityLtr : plannedQty * capacityLtr;
+                          const kg = ltr * fillingDensity;
+
+                          return (
+                            <tr key={idx}>
+                              <td className="border border-gray-800 px-2 py-1">{productName}</td>
+                              <td className="border border-gray-800 px-2 py-1 text-center">
+                                {plannedQty > 0 ? plannedQty : 0}
+                              </td>
+                              <td className="border border-gray-800 px-2 py-1 text-center">
+                                {actualQty > 0 ? actualQty : ''}
+                              </td>
+                              <td className="border border-gray-800 px-2 py-1 text-right">
+                                {ltr > 0 ? ltr.toFixed(3) : ''}
+                              </td>
+                              <td className="border border-gray-800 px-2 py-1 text-right">
+                                {kg > 0 ? kg.toFixed(3) : ''}
+                              </td>
+                            </tr>
+                          );
+                        });
+                      }
+
+                      // For non-completed batches, use relatedSkus with order lookup
+                      const ordersMapScreen = new Map<number, any>();
+                      orders.forEach((o: any) => {
+                        const productId = o.batchProduct?.productId || o.product?.productId;
+                        if (productId) ordersMapScreen.set(productId, o);
+                      });
+
+                      const skusToShow =
+                        relatedSkus.length > 0
+                          ? relatedSkus
+                          : orders.map((o: any) => ({
+                              productId: o.product?.productId,
+                              productName: o.product?.productName || 'Unknown',
+                            }));
+
+                      return skusToShow.map((sku: any, idx: number) => {
+                        const order = ordersMapScreen.get(sku.productId);
+                        const capacityLtr = parseFloat(order?.packagingCapacity || '0');
+                        const fillingDensity =
+                          parseFloat(order?.product?.fillingDensity || '0') ||
+                          parseFloat(batchData.fgDensity || '0');
+
+                        const plannedQty = parseFloat(order?.batchProduct?.plannedUnits || '0');
+                        const actualQty = parseFloat(order?.batchProduct?.producedUnits || '0');
+                        const ltr = plannedQty * capacityLtr;
+                        const kg = ltr * fillingDensity;
+
+                        return (
+                          <tr key={idx}>
+                            <td className="border border-gray-800 px-2 py-1">
+                              {sku.productName || 'Unknown'}
+                            </td>
+                            <td className="border border-gray-800 px-2 py-1 text-center">
+                              {plannedQty > 0 ? plannedQty : 0}
+                            </td>
+                            <td className="border border-gray-800 px-2 py-1 text-center">
+                              {actualQty > 0 ? actualQty : ''}
+                            </td>
+                            <td className="border border-gray-800 px-2 py-1 text-right">
+                              {ltr > 0 ? ltr.toFixed(3) : ''}
+                            </td>
+                            <td className="border border-gray-800 px-2 py-1 text-right">
+                              {kg > 0 ? kg.toFixed(3) : ''}
+                            </td>
+                          </tr>
+                        );
+                      });
+                    })()}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-teal-500 text-white font-bold">
+                      <td className="border border-gray-800 px-2 py-1 text-right">Total</td>
+                      <td className="border border-gray-800 px-2 py-1 text-center">
+                        {totalPackages}
+                      </td>
+                      <td className="border border-gray-800 px-2 py-1"></td>
+                      <td className="border border-gray-800 px-2 py-1"></td>
+                      <td className="border border-gray-800 px-2 py-1"></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+
+            {/* Additional Materials - Removed as separate table, now merged */}
+            {/* {additionalMaterials.length > 0 && ( ... )} */}
+
+            {/* Production Summary Table */}
+            {relatedSkus.length > 0 && (
+              <div className="mt-4">
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse border border-gray-800 text-sm">
+                    <thead>
+                      <tr className="bg-gray-200">
+                        <th className="border border-gray-800 px-2 py-1 text-left">Product</th>
+                        <th className="border border-gray-800 px-2 py-1 w-16 text-center">
+                          APP QTY
+                        </th>
+                        <th className="border border-gray-800 px-2 py-1 w-20 text-center">
+                          BATCH QTY
+                        </th>
+                        <th className="border border-gray-800 px-2 py-1 w-24 text-center">
+                          DISPATCH QTY
+                        </th>
+                        <th className="border border-gray-800 px-2 py-1 w-16 text-center">TOTAL</th>
+                        <th className="border border-gray-800 px-2 py-1 w-20 text-center">
+                          ACTUAL QTY
+                        </th>
+                        <th className="border border-gray-800 px-2 py-1 w-20 text-center">
+                          DIFFERENCE
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(() => {
+                        // Build orders map for quick lookup
+                        const ordersMapScreen = new Map<number, any>();
+                        orders.forEach((o: any) => {
+                          const productId = o.batchProduct?.productId || o.product?.productId;
+                          if (productId) ordersMapScreen.set(productId, o);
+                        });
+
+                        return relatedSkus.map((sku: any, idx: number) => {
+                          const order = ordersMapScreen.get(sku.productId);
+                          const appQty = parseFloat(sku.availableQuantity || '0');
+                          const batchQty = parseFloat(order?.batchProduct?.plannedUnits || '0');
+
+                          return (
+                            <tr key={idx} className="hover:bg-[var(--surface-hover)]">
+                              <td className="border border-gray-800 px-2 py-1">
+                                {sku.productName || 'Unknown'}
+                              </td>
+                              <td className="border border-gray-800 px-2 py-1 text-center">
+                                {appQty > 0 ? appQty.toFixed(2) : '0.00'}
+                              </td>
+                              <td className="border border-gray-800 px-2 py-1 text-center">
+                                {batchQty > 0 ? batchQty : ''}
+                              </td>
+                              <td className="border border-gray-800 px-2 py-1 text-center"></td>
+                              <td className="border border-gray-800 px-2 py-1 text-center"></td>
+                              <td className="border border-gray-800 px-2 py-1 text-center"></td>
+                              <td className="border border-gray-800 px-2 py-1 text-center"></td>
+                            </tr>
+                          );
+                        });
+                      })()}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Production Remarks */}
+            <div className="border-t-2 border-gray-800 pt-4 mt-4">
+              <p className="font-semibold">Production Remark:</p>
+              {reportType === 'completion-chart' && batchData.productionRemarks && (
+                <p className="mt-1">{batchData.productionRemarks}</p>
+              )}
+            </div>
+
+            {/* Signatures */}
+            <div className="grid grid-cols-2 gap-8 mt-8">
+              <div>
+                <p className="font-semibold">Labours Sign:</p>
+                <p className="mt-2">{batchData.labourNames || ''}</p>
+              </div>
+              <div className="text-right">
+                <p className="font-semibold">Supervisor Sign:</p>
+                <p className="mt-2">Mr. {batchData.supervisorName || ''}</p>
+              </div>
+            </div>
+
+            {/* Download PDF Button */}
+            <div className="mt-8 flex justify-center">
+              <Button
+                variant="primary"
+                onClick={handleExportPDF}
+                disabled={isLoading || !batchData}
+                leftIcon={<FileDown size={18} />}
+              >
+                Download PDF
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="text-center text-gray-500 py-10">Failed to load batch data</div>
+        )}
+      </div>
+    </Modal>
+  );
+}

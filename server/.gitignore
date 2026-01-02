@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.env
+*.log
+.DS_Store
+coverage/
+.vscode/
+
+# Auto-generated schema files
+# src/db/schema/tables.js
+# src/db/schema/relations.js

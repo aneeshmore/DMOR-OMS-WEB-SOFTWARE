@@ -1,0 +1,106 @@
+/**
+ * Production Manager Routes
+ */
+import express from 'express';
+import * as controller from './controller.js';
+import { requirePermission } from '../../middleware/requirePermission.js';
+
+const router = express.Router();
+
+router.get(
+  '/accepted-orders',
+  requirePermission('GET:/production-manager/accepted-orders'),
+  controller.getAcceptedOrders
+);
+router.get(
+  '/batchable-orders',
+  requirePermission('GET:/production-manager/batchable-orders'),
+  controller.getBatchableOrders
+);
+router.get(
+  '/orders/:orderId',
+  requirePermission('GET:/production-manager/orders/:id'),
+  controller.getOrderDetails
+);
+router.put(
+  '/orders/:orderId',
+  requirePermission('PUT:/production-manager/orders/:id'),
+  controller.updateOrderDetails
+);
+router.post(
+  '/check-inventory',
+  requirePermission('POST:/production-manager/check-inventory'),
+  controller.checkInventory
+);
+router.post(
+  '/calculate-bom',
+  requirePermission('POST:/production-manager/calculate-bom'),
+  controller.calculateConsolidatedBOM
+);
+router.post(
+  '/schedule-batch',
+  requirePermission('POST:/production-manager/schedule-batch'),
+  controller.scheduleBatch
+);
+router.put(
+  '/update-delivery-date',
+  requirePermission('PUT:/production-manager/update-delivery-date'),
+  controller.updateDeliveryDate
+);
+router.post(
+  '/orders/:orderId/send-to-dispatch',
+  requirePermission('POST:/production-manager/orders/:id/send-to-dispatch'),
+  controller.sendToDispatch
+);
+router.post(
+  '/orders/:orderId/reserve-stock',
+  requirePermission('POST:/production-manager/orders/:id/reserve-stock'),
+  controller.reserveOrderStock
+);
+router.post(
+  '/orders/:orderId/release-stock',
+  requirePermission('POST:/production-manager/orders/:id/release-stock'),
+  controller.releaseOrderStock
+);
+router.get(
+  '/planning-dashboard',
+  requirePermission('GET:/production-manager/planning-dashboard'),
+  controller.getPlanningDashboard
+);
+router.post(
+  '/check-production-feasibility',
+  requirePermission('POST:/production-manager/check-production-feasibility'),
+  controller.checkProductionFeasibility
+);
+router.post(
+  '/check-group-feasibility',
+  requirePermission('POST:/production-manager/check-group-feasibility'),
+  controller.checkGroupFeasibility
+);
+router.post(
+  '/auto-schedule',
+  requirePermission('POST:/production-manager/auto-schedule'),
+  controller.autoScheduleOrder
+);
+router.get(
+  '/batches',
+  requirePermission('GET:/production-manager/batches'),
+  controller.getAllBatches
+);
+router.get(
+  '/batches/:batchId',
+  requirePermission('GET:/production-manager/batches/:id'),
+  controller.getBatchDetails
+);
+router.put(
+  '/batches/:batchId/complete',
+  requirePermission('PUT:/production-manager/batches/:id/complete'),
+  controller.completeBatch
+);
+router.put(
+  '/batches/:batchId/cancel',
+  requirePermission('PUT:/production-manager/batches/:id/cancel'),
+  controller.cancelBatch
+);
+
+export default router;

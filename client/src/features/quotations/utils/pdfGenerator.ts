@@ -1,0 +1,45 @@
+import { QuotationData } from '@/features/quotations/types';
+
+/**
+ * Downloads a quotation PDF by navigating to the QuotationMaker page
+ * This uses the existing quotation format in QuotationMaker.tsx
+ *
+ * @param quotationData - The quotation data to render
+ * @param navigate - React Router navigate function
+ */
+export function navigateToDownloadPDF(
+  quotationData: QuotationData,
+  navigate: (path: string, options?: any) => void
+): void {
+  navigate('/quotation-maker', {
+    state: {
+      importedData: quotationData,
+      startInPreview: true,
+      autoDownload: true,
+    },
+  });
+}
+
+/**
+ * For inline download without navigation - opens in new tab
+ * This approach maintains the original quotation format
+ */
+export async function downloadQuotationPDF(quotationData: QuotationData): Promise<void> {
+  // Since the QuotationMaker has a complex React-based template,
+  // the best way is to open it in a new window with auto-download flag
+
+  // Store data in sessionStorage for the new window to access
+  const dataKey = `quotation_download_${Date.now()}`;
+  sessionStorage.setItem(
+    dataKey,
+    JSON.stringify({
+      importedData: quotationData,
+      startInPreview: true,
+      autoDownload: true,
+    })
+  );
+
+  // Open QuotationMaker in new window - using correct route path
+  const url = `/quotation-maker?download=${dataKey}`;
+  window.open(url, '_blank');
+}
