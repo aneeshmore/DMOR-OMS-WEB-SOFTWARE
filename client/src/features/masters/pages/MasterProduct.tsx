@@ -164,12 +164,8 @@ const MasterProduct = () => {
         showToast.error('Oil Absorption is required for Extender subcategory');
         return;
       }
-      if (subcategory === 'Extender' && Number(oilAbsorption) > 100) {
-        showToast.error('Oil Absorption % cannot be greater than 100');
-        return;
-      }
       if (subcategory === 'Extender' && Number(oilAbsorption) < 0) {
-        showToast.error('Oil Absorption % cannot be negative');
+        showToast.error('Oil Absorption (ml/g) cannot be negative');
         return;
       }
     }
@@ -493,11 +489,9 @@ const MasterProduct = () => {
 
                 {subcategory === 'Extender' && (
                   <Input
-                    label="Oil Absorption %"
+                    label="Oil Absorption (ml/g)"
                     type="number"
                     step="0.01"
-                    min="0"
-                    max="100"
                     value={oilAbsorption}
                     onChange={e => {
                       const value = e.target.value;
@@ -505,11 +499,9 @@ const MasterProduct = () => {
                         setOilAbsorption('');
                       } else {
                         const numValue = Number(value);
-                        // Clamp between 0 and 100
+                        // Allow any positive value for ml/g
                         if (numValue < 0) {
                           setOilAbsorption(0);
-                        } else if (numValue > 100) {
-                          setOilAbsorption(100);
                         } else {
                           setOilAbsorption(numValue);
                         }

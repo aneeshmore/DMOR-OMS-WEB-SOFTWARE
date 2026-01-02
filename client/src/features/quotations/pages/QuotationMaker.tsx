@@ -7,6 +7,7 @@ import jsPDF from 'jspdf';
 import { ColumnDef } from '@tanstack/react-table';
 
 import { showToast } from '@/utils/toast';
+import { numberToWords } from '@/utils/formatters';
 import { QuotationData, QuotationItem } from '../types';
 import { productApi } from '@/features/master-products/api/productApi';
 
@@ -79,7 +80,7 @@ const EditableInput = ({
   if (isPdfMode) {
     return (
       <span
-        className={`inline-block border-b border-dashed border-gray-300 px-1 min-h-[1.2rem] text-[100%] ${className}`}
+        className={`inline-block px-1 min-h-[1.2rem] text-[100%] ${className}`}
       >
         {value}
       </span>
@@ -114,7 +115,7 @@ const EditableTextArea = ({
   if (isPdfMode) {
     return (
       <div
-        className={`whitespace-pre-wrap px-1 border border-dashed border-gray-300 text-[100%] ${className}`}
+        className={`whitespace-pre-wrap px-1 text-[100%] ${className}`}
       >
         {value}
       </div>
@@ -1186,7 +1187,7 @@ const QuotationMaker = () => {
           </div>
 
           <div className="border-t border-black">
-            <table className="w-full text-[8.5pt]">
+            <table className="w-full text-[8.5pt] border border-black">
               <thead>
                 <tr className="bg-white border-b border-black divide-x divide-black">
                   <th className="p-1 w-8 text-center font-bold text-[8pt]">Sl No.</th>
@@ -1292,7 +1293,7 @@ const QuotationMaker = () => {
             </table>
 
             {/* Totals Section */}
-            <div className="border-t border-black text-[8.5pt]">
+            <div className="border border-black text-[8.5pt]">
               <div className="grid grid-cols-[1fr_144px] divide-x divide-black border-b border-black">
                 <div className="p-1 px-4 text-right italic">Sub Total</div>
                 <div className="p-1 text-right">{totalAmount.toFixed(2)}</div>
@@ -1323,23 +1324,22 @@ const QuotationMaker = () => {
               </div>
             </div>
 
-            <div className="border-t border-black grid grid-cols-[1fr_auto] divide-x divide-black font-bold text-[9pt]">
+            <div className="border border-black grid grid-cols-[1fr_auto] divide-x divide-black font-bold text-[9pt]">
               <div className="p-1 text-right">Total</div>
-              <div className="p-1 w-[144px] text-right">₹ {finalTotal.toFixed(2)}</div>
+              <div className="p-1 w-[144px] text-right">₹ {finalTotal.toFixed(2)}<br /><span className="text-[7.5pt] text-gray-600 italic">(Incl. 18% GST)</span></div>
             </div>
-            <div className="text-right pr-2 text-[7.5pt] text-gray-600 italic">(Incl. 18% GST)</div>
           </div>
 
           {/* Amount in words */}
-          <div className="border-t border-black p-2 text-[8.5pt]">
+          <div className="border border-black p-2 text-[8.5pt]">
             <span className="font-normal">Amount Chargeable (in words)</span>
             <div className="font-bold italic mt-1">
-              INR {finalTotal.toFixed(2)} Only (Auto-convert pending)
+              INR {numberToWords(finalTotal)} Only
             </div>
           </div>
 
           {/* Footer */}
-          <div className="border-t border-black grid grid-cols-2 text-[8.5pt]">
+          <div className="border border-black grid grid-cols-2 text-[8.5pt]">
             <div className="p-2 border-r border-black">
               <div className="mb-4">
                 <span className="font-bold">Company&apos;s PAN</span> :{' '}

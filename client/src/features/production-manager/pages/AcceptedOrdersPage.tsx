@@ -57,7 +57,12 @@ export default function AcceptedOrdersPage() {
         details: [], // Initialize empty, fetch on demand
       }));
 
-      setOrders(ordersWithData);
+      // Sort orders by creation time (descending - newest first)
+      const sortedOrdersWithData = ordersWithData.sort(
+        (a, b) => new Date(b.order.orderDate).getTime() - new Date(a.order.orderDate).getTime()
+      );
+
+      setOrders(sortedOrdersWithData);
 
       // Initialize editing state
       const initialData: Record<number, any> = {};

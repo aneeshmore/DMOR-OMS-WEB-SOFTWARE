@@ -465,14 +465,6 @@ const CreateOrderForm: React.FC<CreateOrderFormProps> = ({ onSuccess, viewMode =
     async (index: number, field: keyof OrderDetailLine, value: string | number) => {
       if (field === 'productId') {
         const productId = Number(value);
-        const isDuplicate = orderDetails.some(
-          (item, idx) => idx !== index && item.productId === productId
-        );
-
-        if (isDuplicate) {
-          showToast.error('This product is already in the order list');
-          return;
-        }
 
         // Check if this is a Base product with linked Hardener
         const selectedProduct = products.find(p => p.productId === productId);

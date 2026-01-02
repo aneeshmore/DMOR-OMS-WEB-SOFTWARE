@@ -41,7 +41,11 @@ export default function AccountsDashboard() {
       setOrders(nonCancelledData);
 
       const safeCancelledData = Array.isArray(cancelledData) ? cancelledData : [];
-      setCancelledOrders(safeCancelledData);
+      // Sort cancelled orders by creation time (descending - newest first)
+      const sortedCancelledData = safeCancelledData.sort(
+        (a, b) => new Date(b.orderCreatedDate).getTime() - new Date(a.orderCreatedDate).getTime()
+      );
+      setCancelledOrders(sortedCancelledData);
 
       const initialData: Record<
         number,

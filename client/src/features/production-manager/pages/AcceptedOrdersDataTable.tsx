@@ -335,8 +335,7 @@ export function AcceptedOrdersDataTable({
       columns={columns}
       data={data}
       searchPlaceholder="Filter orders..."
-      showPagination={false}
-      defaultPageSize={10000}
+      defaultPageSize={25}
       enableVirtualization={false}
       getRowCanExpand={() => true}
       renderSubComponent={({ row }) => (

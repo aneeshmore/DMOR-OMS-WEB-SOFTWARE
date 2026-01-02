@@ -72,11 +72,13 @@ const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', '
 const CustomerReport: React.FC = () => {
   const { user } = useAuth();
   const isAdmin = user?.Role === 'Admin';
+  const isSalesPerson = user?.Role === 'Sales Person';
 
   const [customerData, setCustomerData] = useState<CustomerMonthlyData[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [selectedSalesperson, setSelectedSalesperson] = useState('');
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear().toString());
+  const [selectedMonth, setSelectedMonth] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [loading, setLoading] = useState(true);
@@ -88,6 +90,13 @@ const CustomerReport: React.FC = () => {
   } | null>({ key: 'companyName', direction: 'asc' });
   const [showExportOptions, setShowExportOptions] = useState(false);
   const [exportLoading, setExportLoading] = useState(false);
+
+  // Set default salesperson for sales person role
+  useEffect(() => {
+    if (isSalesPerson && user?.EmployeeID && !selectedSalesperson) {
+      setSelectedSalesperson(String(user.EmployeeID));
+    }
+  }, [isSalesPerson, user?.EmployeeID, selectedSalesperson]);
 
   // Fetch data
   useEffect(() => {
@@ -252,7 +261,17 @@ const CustomerReport: React.FC = () => {
     return Array.from({ length: 6 }, (_, i) => (currentYear - 5 + i).toString());
   }, []);
 
-  // Filter customers by salesperson
+  // Filter employees based on user role
+  const filteredEmployees = useMemo(() => {
+    if (isSalesPerson && user?.EmployeeID) {
+      // For salespeople, only show their own name
+      return employees.filter(emp => emp.id === user.EmployeeID);
+    }
+    // For admins, show all employees
+    return employees;
+  }, [employees, isSalesPerson, user?.EmployeeID]);
+
+  // Filter customers by salesperson and month
   const filteredCustomers = useMemo(() => {
     const customerSalespersonOrders = (
       window as unknown as {
@@ -268,9 +287,11 @@ const CustomerReport: React.FC = () => {
       return [];
     }
 
+    let customers: CustomerMonthlyData[] = [];
+
     if (!selectedSalesperson) {
       // Show all customers with their total data across all salespersons
-      return customerData.map(customer => {
+      customers = customerData.map(customer => {
         const allOrdersForCustomer = Array.from(customerSalespersonOrders.entries()).filter(
           ([key]: [string, unknown]) => key.startsWith(`${customer.customerId}-`)
         );
@@ -293,32 +314,31 @@ const CustomerReport: React.FC = () => {
           totalAmount,
         };
       });
+    } else {
+      // Filter customers by selected salesperson
+      customerData.forEach(customer => {
+        const key = `${customer.customerId}-${selectedSalesperson}`;
+        const orderData = customerSalespersonOrders.get(key);
+
+        if (orderData) {
+          customers.push({
+            ...customer,
+            monthlyAmounts: orderData.monthlyAmounts,
+            totalAmount: orderData.totalAmount,
+            salesPersonId: orderData.salespersonId,
+          });
+        }
+      });
     }
 
-    // Filter customers by selected salesperson
-    const customersWithSalesperson: CustomerMonthlyData[] = [];
+    // Apply month filter if selected
+    if (selectedMonth !== '') {
+      const monthIndex = parseInt(selectedMonth);
+      customers = customers.filter(customer => customer.monthlyAmounts[monthIndex] > 0);
+    }
 
-    customerData.forEach(customer => {
-      const key = `${customer.customerId}-${selectedSalesperson}`;
-      const orderData = customerSalespersonOrders.get(key);
-
-      if (orderData) {
-        customersWithSalesperson.push({
-          ...customer,
-          monthlyAmounts: orderData.monthlyAmounts,
-          totalAmount: orderData.totalAmount,
-          salesPersonId: orderData.salespersonId,
-        });
-      } else {
-        // Still add customer but with zero amounts if assigned to this salesperson
-        // Wait, if filtering by salesperson, we only show customers assigned to them.
-        // The original logic was:
-        // if (orderData && orderData.totalAmount > 0)
-      }
-    });
-
-    return customersWithSalesperson;
-  }, [customerData, selectedSalesperson]);
+    return customers;
+  }, [customerData, selectedSalesperson, selectedMonth]);
 
   // Apply Search and Sort
   const processedCustomers = useMemo(() => {
@@ -902,7 +922,7 @@ const CustomerReport: React.FC = () => {
       {!loading && customerData.length > 0 && (
         <div className="space-y-4 card p-6">
           <h3 className="text-lg font-semibold text-[var(--text-primary)]">Filters</h3>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 max-w-2xl">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3 max-w-4xl">
             {/* Salesperson Filter */}
             <div>
               <label className="mb-2 block text-sm font-medium text-[var(--text-primary)]">
@@ -916,8 +936,8 @@ const CustomerReport: React.FC = () => {
                 }}
                 className="w-full px-4 py-2 rounded-lg border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] focus:border-[var(--primary)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]/20 transition-all"
               >
-                <option value="">All Salespersons</option>
-                {employees.map(emp => (
+                {!isSalesPerson && <option value="">All Salespersons</option>}
+                {filteredEmployees.map(emp => (
                   <option key={emp.id} value={String(emp.id)}>
                     {emp.name}
                   </option>
@@ -934,6 +954,7 @@ const CustomerReport: React.FC = () => {
                 value={selectedYear}
                 onChange={e => {
                   setSelectedYear(e.target.value);
+                  setSelectedMonth(''); // Reset month when year changes
                   setCurrentPage(1);
                 }}
                 className="w-full px-4 py-2 rounded-lg border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] focus:border-[var(--primary)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]/20 transition-all"
@@ -941,6 +962,28 @@ const CustomerReport: React.FC = () => {
                 {years.map(year => (
                   <option key={year} value={year}>
                     {year}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Month Filter */}
+            <div>
+              <label className="mb-2 block text-sm font-medium text-[var(--text-primary)]">
+                Select Month
+              </label>
+              <select
+                value={selectedMonth}
+                onChange={e => {
+                  setSelectedMonth(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className="w-full px-4 py-2 rounded-lg border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] focus:border-[var(--primary)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]/20 transition-all"
+              >
+                <option value="">All Months</option>
+                {MONTHS.map((month, index) => (
+                  <option key={month} value={String(index)}>
+                    {month}
                   </option>
                 ))}
               </select>
@@ -972,7 +1015,7 @@ const CustomerReport: React.FC = () => {
             <div className="flex items-center justify-between">
               <div>
                 <div className="text-sm font-medium text-[var(--text-secondary)]">
-                  Total Revenue
+                  Total Current Monthly Revenue
                 </div>
                 <div className="mt-2 text-3xl font-bold text-[var(--success)]">
                   ₹{(stats.totalRevenue / 1000).toFixed(0)}K

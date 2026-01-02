@@ -307,8 +307,7 @@ export const SplitOrdersTable: React.FC<SplitOrdersTableProps> = ({
         columns={columns}
         searchPlaceholder="Search split orders..."
         showToolbar={true}
-        showPagination={false}
-        defaultPageSize={10000}
+        defaultPageSize={25}
         enableVirtualization={false}
         getRowCanExpand={() => true}
         renderSubComponent={({ row }) => <ExpandedOrderDetails orderId={row.original.orderId} />}
