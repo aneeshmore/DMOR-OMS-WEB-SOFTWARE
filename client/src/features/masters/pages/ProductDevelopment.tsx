@@ -107,6 +107,12 @@ const ProductDevelopment = () => {
     currentIndex: number,
     columnName: string
   ) => {
+    // Prevent up/down arrow keys from changing values for percentage field
+    if (columnName === 'percentage' && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+      e.preventDefault();
+      return;
+    }
+
     if (e.key === 'Enter') {
       e.preventDefault();
       const nextIndex = currentIndex + 1;
@@ -710,7 +716,7 @@ const ProductDevelopment = () => {
         description="Create and manage product recipes"
       />
 
-      <div className="card p-6 space-y-8">
+      <div className="card p-6 space-y-8 pb-24">
         {/* Top Form Section */}
         <div className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -730,6 +736,11 @@ const ProductDevelopment = () => {
               label="Viscosity"
               value={viscosity}
               onChange={e => setViscosity(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                  e.preventDefault();
+                }
+              }}
               placeholder="Viscosity"
               type="number"
               step="0.01"
@@ -751,6 +762,11 @@ const ProductDevelopment = () => {
                   } else {
                     setPerPercent(value);
                   }
+                }
+              }}
+              onKeyDown={e => {
+                if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                  e.preventDefault();
                 }
               }}
               placeholder="Water Percentage"
@@ -1051,45 +1067,45 @@ const ProductDevelopment = () => {
         </div>
 
         {/* Footer Actions */}
-        <div className="flex flex-col md:flex-row items-center justify-between gap-4 pt-4 border-t border-[var(--border)]">
-          <div className="flex flex-wrap gap-6 text-sm font-medium text-[var(--text-secondary)]">
-            <div>
-              SVR:{' '}
-              <span className="text-[var(--text-primary)]">
-                {addedItems.length > 0 ? `${calculateSolidVolumeRatio().toFixed(3)}%` : '--'}
-              </span>
-            </div>
-            <div>
-              PVC:{' '}
-              <span className="text-[var(--text-primary)]">
-                {addedItems.length > 0 ? `${calculatePVC().toFixed(3)}%` : '--'}
-              </span>
-            </div>
-            <div>
-              CPVC:{' '}
-              <span className="text-[var(--text-primary)]">
-                {addedItems.length > 0 ? `${calculateCPVC().toFixed(3)}%` : '--'}
-              </span>
-            </div>
-            <div>
-              Total Volume:{' '}
-              <span className="text-[var(--text-primary)]">
-                {addedItems.length > 0 ? calculateTotalVolume().toFixed(4) : '--'}
-              </span>
-            </div>
-            <div>
-              Total Solid:{' '}
-              <span className="text-[var(--text-primary)]">
-                {addedItems.length > 0 ? calculateTotalSolid().toFixed(3) : '--'}
-              </span>
-            </div>
-            <div>
-              Σ sv:{' '}
-              <span className="text-[var(--text-primary)]">
-                {addedItems.length > 0 ? calculateSolidVolume().toFixed(4) : '--'}
-              </span>
-            </div>
+        <div className="flex flex-wrap gap-6 text-sm font-medium text-[var(--text-secondary)] pt-4 border-t border-[var(--border)]">
+          <div>
+            SVR:{' '}
+            <span className="text-[var(--text-primary)]">
+              {addedItems.length > 0 ? `${calculateSolidVolumeRatio().toFixed(3)}%` : '--'}
+            </span>
           </div>
+          <div>
+            PVC:{' '}
+            <span className="text-[var(--text-primary)]">
+              {addedItems.length > 0 ? `${calculatePVC().toFixed(3)}%` : '--'}
+            </span>
+          </div>
+          <div>
+            CPVC:{' '}
+            <span className="text-[var(--text-primary)]">
+              {addedItems.length > 0 ? `${calculateCPVC().toFixed(3)}%` : '--'}
+            </span>
+          </div>
+          <div>
+            Total Volume:{' '}
+            <span className="text-[var(--text-primary)]">
+              {addedItems.length > 0 ? calculateTotalVolume().toFixed(4) : '--'}
+            </span>
+          </div>
+          <div>
+            Total Solid:{' '}
+            <span className="text-[var(--text-primary)]">
+              {addedItems.length > 0 ? calculateTotalSolid().toFixed(3) : '--'}
+            </span>
+          </div>
+          <div>
+            Σ sv:{' '}
+            <span className="text-[var(--text-primary)]">
+              {addedItems.length > 0 ? calculateSolidVolume().toFixed(4) : '--'}
+            </span>
+          </div>
+        </div>
+        <div className="fixed bottom-0 right-0 p-6 z-50">
           <div className="flex gap-3">
             <Button
               variant="primary"
