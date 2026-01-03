@@ -1,14 +1,15 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { PageHeader } from '@/components/common';
 import { ordersApi } from '../api/ordersApi';
-import { Order } from '../types';
+import { Order, OrderWithDetails } from '../types';
 import { DataTable, DataTableColumnHeader } from '@/components/ui/data-table';
 import { ColumnDef } from '@tanstack/react-table';
 import { Badge } from '@/components/ui/badge';
 import { format } from 'date-fns';
-import { RotateCcw } from 'lucide-react';
-import { Button } from '@/components/ui';
+import { RotateCcw, Eye } from 'lucide-react';
+import { Button, Modal } from '@/components/ui';
 import { CreateOrderForm, ModeSwitcher, ModeIndicatorBanner, type ViewMode } from '../components';
+import { showToast } from '@/utils/toast';
 
 const formatDisplayOrderId = (orderId: number, dateString: string) => {
   if (!dateString) return `ORD-${orderId}`;
@@ -23,6 +24,11 @@ const CreateOrderPage: React.FC = () => {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState<ViewMode>('orders');
+
+  // Modal States
+  const [viewModalOpen, setViewModalOpen] = useState(false);
+  const [selectedOrder, setSelectedOrder] = useState<OrderWithDetails | null>(null);
+  const [viewLoading, setViewLoading] = useState(false);
 
   const fetchOrders = useCallback(async () => {
     try {
@@ -164,7 +170,42 @@ const CreateOrderPage: React.FC = () => {
         return <div className="text-right font-medium">₹{amount.toFixed(2)}</div>;
       },
     },
+    {
+      id: 'actions',
+      header: 'Actions',
+      cell: ({ row }) => {
+        const order = row.original;
+        return (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => handleViewOrder(order)}
+            title="View Order Details"
+            className="text-[var(--text-secondary)] hover:text-[var(--primary)] hover:bg-[var(--primary)]/10"
+          >
+            <Eye size={14} className="mr-1.5" />
+            View
+          </Button>
+        );
+      },
+    },
   ];
+
+  // Handle View Order
+  const handleViewOrder = useCallback(async (order: Order) => {
+    try {
+      setViewLoading(true);
+      setViewModalOpen(true);
+      const orderDetails = await ordersApi.getById(order.orderId);
+      setSelectedOrder(orderDetails);
+    } catch (error) {
+      console.error('Failed to fetch order details:', error);
+      showToast.error('Failed to load order details');
+      setViewModalOpen(false);
+    } finally {
+      setViewLoading(false);
+    }
+  }, []);
 
   return (
     <div className="container mx-auto pb-10">
@@ -215,6 +256,163 @@ const CreateOrderPage: React.FC = () => {
             )}
           </div>
         )}
+
+        {/* Order View Modal */}
+        <Modal
+          isOpen={viewModalOpen}
+          onClose={() => {
+            setViewModalOpen(false);
+            setSelectedOrder(null);
+          }}
+          title="Order Details"
+          size="lg"
+        >
+          {viewLoading ? (
+            <div className="flex flex-col items-center justify-center py-16">
+              <div className="w-12 h-12 border-4 border-[var(--primary)] border-t-transparent rounded-full animate-spin mb-4"></div>
+              <p className="text-[var(--text-secondary)]">Loading order details...</p>
+            </div>
+          ) : selectedOrder ? (
+            <div className="space-y-6">
+              {/* Header Info */}
+              <div className="bg-gradient-to-r from-indigo-50 to-purple-50 p-4 rounded-lg">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <div className="text-lg font-bold text-[var(--primary)]">
+                      {selectedOrder.orderNumber ||
+                        formatDisplayOrderId(selectedOrder.orderId, selectedOrder.orderDate)}
+                    </div>
+                    <div className="text-sm text-[var(--text-secondary)]">
+                      Created: {format(new Date(selectedOrder.createdAt), 'dd MMM yyyy, hh:mm a')}
+                    </div>
+                    {selectedOrder.salespersonName && (
+                      <div className="text-sm text-[var(--text-secondary)] mt-1 font-medium">
+                        <span className="text-indigo-600">👤 {selectedOrder.salespersonName}</span>
+                      </div>
+                    )}
+                  </div>
+                  <Badge
+                    variant={
+                      selectedOrder.status === 'Rejected' || selectedOrder.status === 'Cancelled'
+                        ? 'destructive'
+                        : 'secondary'
+                    }
+                    className={
+                      selectedOrder.status === 'Delivered'
+                        ? 'bg-green-100 text-green-800 border-green-200'
+                        : selectedOrder.status === 'Dispatched'
+                          ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                          : selectedOrder.status === 'Ready for Dispatch'
+                            ? 'bg-blue-100 text-blue-800 border-blue-200'
+                            : selectedOrder.status === 'In Production' ||
+                                selectedOrder.status === 'Scheduled for Production'
+                              ? 'bg-purple-100 text-purple-800 border-purple-200'
+                              : selectedOrder.status === 'Confirmed' ||
+                                  selectedOrder.status === 'Accepted'
+                                ? 'bg-teal-100 text-teal-800 border-teal-200'
+                                : selectedOrder.status === 'Pending'
+                                  ? 'bg-orange-100 text-orange-800 border-orange-200'
+                                  : ''
+                    }
+                  >
+                    {selectedOrder.status}
+                  </Badge>
+                </div>
+              </div>
+
+              {/* Customer Info */}
+              <div className="bg-[var(--surface-secondary)] p-4 rounded-lg">
+                <h4 className="font-semibold text-[var(--text-primary)] mb-2">Customer Details</h4>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <span className="text-[var(--text-secondary)]">Name:</span>
+                    <span className="ml-2 font-medium">
+                      {selectedOrder.companyName || selectedOrder.customerName || '-'}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-[var(--text-secondary)]">Priority:</span>
+                    <span className="ml-2 font-medium">{selectedOrder.priority || 'Normal'}</span>
+                  </div>
+                  <div className="col-span-2">
+                    <span className="text-[var(--text-secondary)]">Delivery Address:</span>
+                    <span className="ml-2 font-medium">
+                      {selectedOrder.deliveryAddress || '-'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Order Items */}
+              <div>
+                <h4 className="font-semibold text-[var(--text-primary)] mb-3">Order Items</h4>
+                <div className="border border-[var(--border)] rounded-lg overflow-hidden overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-[var(--surface-secondary)]">
+                      <tr>
+                        <th className="text-left p-3 font-medium">#</th>
+                        <th className="text-left p-3 font-medium">Product</th>
+                        <th className="text-right p-3 font-medium">Qty</th>
+                        <th className="text-right p-3 font-medium">Rate</th>
+                        <th className="text-right p-3 font-medium">Disc%</th>
+                        <th className="text-right p-3 font-medium">Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {selectedOrder.orderDetails?.map((item, idx) => {
+                        const unitPrice = parseFloat(item.unitPrice?.toString() || '0');
+                        const totalPrice = parseFloat(item.totalPrice?.toString() || '0');
+                        return (
+                          <tr key={item.orderDetailId} className="border-t border-[var(--border)]">
+                            <td className="p-3">{idx + 1}</td>
+                            <td className="p-3 font-medium">Product ID: {item.productId}</td>
+                            <td className="p-3 text-right">{item.quantity}</td>
+                            <td className="p-3 text-right">₹{unitPrice.toFixed(2)}</td>
+                            <td className="p-3 text-right">{item.discount || 0}%</td>
+                            <td className="p-3 text-right font-semibold">
+                              ₹{totalPrice.toFixed(2)}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                    <tfoot className="bg-[var(--surface-secondary)]">
+                      <tr className="border-t-2 border-[var(--border)]">
+                        <td colSpan={5} className="p-3 text-right font-semibold">
+                          Total:
+                        </td>
+                        <td className="p-3 text-right font-bold text-[var(--primary)]">
+                          ₹{parseFloat(selectedOrder.totalAmount?.toString() || '0').toFixed(2)}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </div>
+
+              {/* Remarks */}
+              {selectedOrder.remarks && (
+                <div className="bg-[var(--surface-secondary)] p-4 rounded-lg">
+                  <h4 className="font-semibold text-[var(--text-primary)] mb-2">Remarks</h4>
+                  <p className="text-sm">{selectedOrder.remarks}</p>
+                </div>
+              )}
+
+              {/* Modal Actions */}
+              <div className="flex gap-3 justify-end pt-4 border-t border-[var(--border)]">
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    setViewModalOpen(false);
+                    setSelectedOrder(null);
+                  }}
+                >
+                  Close
+                </Button>
+              </div>
+            </div>
+          ) : null}
+        </Modal>
       </div>
     </div>
   );

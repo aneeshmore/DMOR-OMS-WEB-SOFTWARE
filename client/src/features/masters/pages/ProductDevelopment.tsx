@@ -790,14 +790,12 @@ const ProductDevelopment = () => {
               />
             </div>
             <Input
-              label="Density (Auto-Calculated)"
+              label="Density"
               value={density}
               onChange={e => setDensity(e.target.value)}
               placeholder="Density"
               type="number"
               step="0.01"
-              readOnly
-              className="bg-gray-50"
             />
             <Input
               label="Production Cost/Ltr (Auto-Calculated)"
@@ -896,9 +894,14 @@ const ProductDevelopment = () => {
                               onChange={e =>
                                 handleUpdateItem(item.id, 'percentage', e.target.value)
                               }
-                              onKeyDown={e =>
-                                handleInputKeyDown(e, addedItems.indexOf(item), 'percentage')
-                              }
+                              onKeyDown={e => {
+                                handleInputKeyDown(e, addedItems.indexOf(item), 'percentage');
+
+
+                                if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                                  e.preventDefault();
+                                }
+                              }}
                               data-row-index={addedItems.indexOf(item)}
                               data-column="percentage"
                               step="1"
@@ -918,9 +921,14 @@ const ProductDevelopment = () => {
                               type="number"
                               value={item.sequence}
                               onChange={e => handleUpdateItem(item.id, 'sequence', e.target.value)}
-                              onKeyDown={e =>
-                                handleInputKeyDown(e, addedItems.indexOf(item), 'sequence')
-                              }
+                              onKeyDown={e => {
+                                handleInputKeyDown(e, addedItems.indexOf(item), 'sequence');
+
+
+                                if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                                  e.preventDefault();
+                                }
+                              }}
                               data-row-index={addedItems.indexOf(item)}
                               data-column="sequence"
                               className="w-full px-2 py-1 rounded border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent outline-none transition-all"
@@ -933,9 +941,14 @@ const ProductDevelopment = () => {
                               onChange={e =>
                                 handleUpdateItem(item.id, 'waitingTime', e.target.value)
                               }
-                              onKeyDown={e =>
-                                handleInputKeyDown(e, addedItems.indexOf(item), 'waitingTime')
-                              }
+                              onKeyDown={e => {
+                                handleInputKeyDown(e, addedItems.indexOf(item), 'waitingTime');
+
+
+                                if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                                  e.preventDefault();
+                                }
+                              }}
                               data-row-index={addedItems.indexOf(item)}
                               data-column="waitingTime"
                               className="w-full px-2 py-1 rounded border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent outline-none transition-all"
