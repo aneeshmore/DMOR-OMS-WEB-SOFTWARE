@@ -219,9 +219,8 @@ const ProductDevelopment = () => {
       ]);
 
       if (fgRes.success && fgRes.data) {
-        // Filter out Base subcategory products
-        const filteredFG = fgRes.data.filter(p => p.Subcategory !== 'Base');
-        setMasterProducts(filteredFG);
+        // Include all FG products including Base and Hardener formulations
+        setMasterProducts(fgRes.data);
       }
       if (rmRes.success && rmRes.data) {
         setRmMasterProducts(rmRes.data);
@@ -920,18 +919,8 @@ const ProductDevelopment = () => {
                             <input
                               type="number"
                               value={item.sequence}
-                              onChange={e => handleUpdateItem(item.id, 'sequence', e.target.value)}
-                              onKeyDown={e => {
-                                handleInputKeyDown(e, addedItems.indexOf(item), 'sequence');
-
-
-                                if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-                                  e.preventDefault();
-                                }
-                              }}
-                              data-row-index={addedItems.indexOf(item)}
-                              data-column="sequence"
-                              className="w-full px-2 py-1 rounded border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent outline-none transition-all"
+                              readOnly
+                              className="w-full px-2 py-1 rounded border border-[var(--border)] bg-[var(--surface-highlight)] text-[var(--text-secondary)] cursor-not-allowed outline-none"
                             />
                           </td>
                           <td className="px-4 py-2">
