@@ -1,6 +1,7 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button, Input, SearchableSelect } from '@/components/ui';
+import Toggle from '@/components/ui/Toggle';
 import { PageHeader } from '@/components/common';
 import { masterProductApi } from '@/features/master-products/api';
 import { MasterProduct } from '@/features/master-products/types';
@@ -97,6 +98,8 @@ const DoubleProductDevelopment = () => {
   const [selectedRmId, setSelectedRmId] = useState<number | ''>('');
   const [baseItems, setBaseItems] = useState<RawMaterialItem[]>([]);
   const [hardenerItems, setHardenerItems] = useState<RawMaterialItem[]>([]);
+  const [isAddToHardener, setIsAddToHardener] = useState(false);
+  const addButtonRef = useRef<HTMLButtonElement>(null);
 
   /**
    * Handle Enter key press to navigate to the next row's input in the same column
@@ -353,80 +356,88 @@ const DoubleProductDevelopment = () => {
     value: string | number,
     isHardener: boolean
   ) => {
-    const currentItems = isHardener ? hardenerItems : baseItems;
     const baseRatio = parseFloat(ratioBase) || 0;
     const hardenerRatio = parseFloat(ratioHardener) || 0;
     const totalRatio = baseRatio + hardenerRatio;
+    let targetTotalSum = 0;
+    if (isHardener) {
+      const baseTotal = calculateListTotalPercentage(baseItems);
+      targetTotalSum = 100 - baseTotal;
+    } else {
+      if (totalRatio > 0) {
+        targetTotalSum = (baseRatio / totalRatio) * 100;
+      } else {
+        targetTotalSum = 100;
+      }
+    }
+    const updater = (prev: RawMaterialItem[]) => {
+      // Step 1: Update the specific item's value
+      let newItems = prev.map(item => {
+        if (item.id !== id) return item;
 
-    const updater = (prev: RawMaterialItem[]) =>
-      prev.map(item => {
-        if (item.id === id) {
-          let newValue = value;
-          if (
-            typeof newValue === 'string' &&
-            newValue.length > 1 &&
-            newValue.startsWith('0') &&
-            newValue[1] !== '.'
-          ) {
-            newValue = newValue.substring(1);
+        let newValue = value;
+        if (
+          typeof newValue === 'string' &&
+          newValue.length > 1 &&
+          newValue.startsWith('0') &&
+          newValue[1] !== '.'
+        ) {
+          newValue = newValue.substring(1);
+        }
+        // Prevent negative values
+        if (typeof newValue === 'number' && newValue < 0) {
+          newValue = 0;
+        } else if (typeof newValue === 'string') {
+          const parsed = parseFloat(newValue);
+          if (parsed < 0) {
+            newValue = '0';
           }
+        }
 
-          const updatedItem = { ...item, [field]: newValue };
-          const rmProduct = rmMasterProducts.find(rm => rm.masterProductId === item.productId);
-          const density =
-            rmProduct?.RMDensity && parseFloat(rmProduct.RMDensity.toString()) > 0
-              ? parseFloat(rmProduct.RMDensity.toString())
-              : 1;
+        const updatedItem = { ...item, [field]: newValue };
+        const rmProduct = rmMasterProducts.find(rm => rm.masterProductId === item.productId);
+        const density =
+          rmProduct?.RMDensity && parseFloat(rmProduct.RMDensity.toString()) > 0
+            ? parseFloat(rmProduct.RMDensity.toString())
+            : 1;
 
-          // If updating Total %, calculate Wt/Ltr and Percent %
-          if (field === 'totalPercentage') {
-            const totalPct = parseFloat(newValue.toString()) || 0;
+        // If updating Total %, calculate Wt/Ltr immediately
+        if (field === 'totalPercentage') {
+          const totalPct = parseFloat(newValue.toString()) || 0;
+          updatedItem.wtInLtr = (totalPct / density).toFixed(3);
+        }
+
+        // If updating Percent %, calculate Total % and Wt/Ltr
+        if (field === 'percentage') {
+          const pct = parseFloat(newValue.toString()) || 0;
+
+          if (isHardener) {
+            // For hardener: Total % = Percent % × (hardenerTotal / 100)
+            const baseTotal = calculateListTotalPercentage(baseItems);
+            const hardenerTotal = 100 - baseTotal;
+            const totalPct = hardenerTotal > 0 ? (pct * hardenerTotal / 100) : 0;
+            updatedItem.totalPercentage = totalPct.toFixed(3);
             updatedItem.wtInLtr = (totalPct / density).toFixed(3);
-
-            // Calculate Percent % based on sum of Total % in this table
-            // Get sum of all Total % values (excluding current item being updated)
-            const otherItemsSum = prev
-              .filter(i => i.id !== id)
-              .reduce((sum, i) => sum + (Number(i.totalPercentage) || 0), 0);
-            const newTotalSum = otherItemsSum + totalPct;
-
-            if (newTotalSum > 0) {
-              updatedItem.percentage = ((totalPct / newTotalSum) * 100).toFixed(3);
-            } else {
-              updatedItem.percentage = totalPct > 0 ? '100' : '0';
-            }
-          }
-
-          // If updating Percent %, calculate Total % and Wt/Ltr
-          if (field === 'percentage') {
-            const pct = parseFloat(newValue.toString()) || 0;
-
-            // Calculate Total % using mixing ratio
-            // Total % = Percent % * (ComponentRatio / TotalRatio) * (100 / 100)
-            // But we need to scale it relative to other items
-            // Simpler approach: recalculate all Total % based on new Percent % distribution
+          } else {
+            // For base: existing logic
             const otherItemsPercentSum = prev
               .filter(i => i.id !== id)
               .reduce((sum, i) => sum + (Number(i.percentage) || 0), 0);
             const newPercentSum = otherItemsPercentSum + pct;
 
-            // Get current sum of Total % for this component
             const currentTotalSum = prev.reduce(
               (sum, i) => sum + (Number(i.totalPercentage) || 0),
               0
             );
 
-            // Use existing total sum or default based on ratio
             let targetTotalSum = currentTotalSum;
             if (targetTotalSum === 0 && totalRatio > 0) {
-              // Initialize based on ratio (Base + Hardener should sum to 100)
-              const componentRatio = isHardener ? hardenerRatio : baseRatio;
+              const componentRatio = baseRatio;
               targetTotalSum = (componentRatio / totalRatio) * 100;
             } else if (targetTotalSum === 0) {
-              targetTotalSum = 100; // Default if no ratio set
+              targetTotalSum = 100;
             }
 
-            // Calculate new Total % proportionally
             if (newPercentSum > 0) {
               const newTotalPct = (pct / newPercentSum) * targetTotalSum;
               updatedItem.totalPercentage = newTotalPct.toFixed(3);
@@ -436,14 +447,57 @@ const DoubleProductDevelopment = () => {
               updatedItem.wtInLtr = '0';
             }
           }
-
-          return updatedItem;
         }
-        return item;
+
+        return updatedItem;
       });
 
-    if (isHardener) setHardenerItems(updater);
-    else setBaseItems(updater);
+      // Step 2: Global Recalculation (Only if Total % changed)
+      if (field === 'totalPercentage') {
+        let totalSum;
+        if (isHardener) {
+          // For hardener, use the fixed hardener total (100 - base total)
+          totalSum = 100 - calculateListTotalPercentage(baseItems);
+        } else {
+          totalSum = newItems.reduce((sum, i) => sum + (Number(i.totalPercentage) || 0), 0);
+        }
+        newItems = newItems.map(item => {
+          const itemTotal = Number(item.totalPercentage) || 0;
+          let newPercent = '0';
+          if (totalSum > 0) {
+            newPercent = ((itemTotal / totalSum) * 100).toFixed(3);
+          }
+          return { ...item, percentage: newPercent };
+        });
+      }
+
+      return newItems;
+    };
+
+    if (isHardener) {
+      setHardenerItems(updater);
+    } else {
+      const newItems = updater(baseItems);
+      const newBaseTotal = calculateListTotalPercentage(newItems);
+      setBaseItems(newItems);
+      // Recalculate hardener totalPercentages when base changes
+      setHardenerItems(prevHardener => prevHardener.map(item => {
+        const pct = parseFloat(item.percentage.toString()) || 0;
+        const hardenerTotal = 100 - newBaseTotal;
+        const totalPct = hardenerTotal > 0 ? (pct * hardenerTotal / 100) : 0;
+        const rmProduct = rmMasterProducts.find(rm => rm.masterProductId === item.productId);
+        const density =
+          rmProduct?.RMDensity && parseFloat(rmProduct.RMDensity.toString()) > 0
+            ? parseFloat(rmProduct.RMDensity.toString())
+            : 1;
+        return {
+          ...item,
+          totalPercentage: totalPct.toFixed(3),
+          wtInLtr: (totalPct / density).toFixed(3),
+          percentage: hardenerTotal > 0 ? ((totalPct / hardenerTotal) * 100).toFixed(3) : '0'
+        };
+      }));
+    }
   };
 
   const calculateTotalPercentage = (items: RawMaterialItem[]) => {
@@ -455,12 +509,7 @@ const DoubleProductDevelopment = () => {
   };
 
   const calculateGrandTotalPercentage = () => {
-    const baseSum = baseItems.reduce((sum, item) => sum + (Number(item.totalPercentage) || 0), 0);
-    const hardenerSum = hardenerItems.reduce(
-      (sum, item) => sum + (Number(item.totalPercentage) || 0),
-      0
-    );
-    return baseSum + hardenerSum;
+    return 100; // Fixed at 100%
   };
 
   const calculateSolidVolumeRatio = (items: RawMaterialItem[]) => {
@@ -740,6 +789,66 @@ const DoubleProductDevelopment = () => {
     return items.reduce((sum, item) => sum + (Number(item.totalPercentage) || 0), 0);
   };
 
+  const handleUpdateTotals = (newTotal: string, isHardener: boolean) => {
+    const targetItems = isHardener ? hardenerItems : baseItems;
+    const parsedNewTotal = parseFloat(newTotal) || 0;
+
+    const updater = (prev: RawMaterialItem[]) => {
+      let newItems = prev.map(item => {
+        const pct = parseFloat(item.percentage.toString()) || 0;
+        const newTotalPct = (pct / 100) * parsedNewTotal;
+        const rmProduct = rmMasterProducts.find(rm => rm.masterProductId === item.productId);
+        const density =
+          rmProduct?.RMDensity && parseFloat(rmProduct.RMDensity.toString()) > 0
+            ? parseFloat(rmProduct.RMDensity.toString())
+            : 1;
+        return {
+          ...item,
+          totalPercentage: newTotalPct.toFixed(3),
+          wtInLtr: (newTotalPct / density).toFixed(3),
+        };
+      });
+
+      // Global recalc for percentage
+      const totalSum = newItems.reduce((sum, i) => sum + (Number(i.totalPercentage) || 0), 0);
+      newItems = newItems.map(item => {
+        const itemTotal = Number(item.totalPercentage) || 0;
+        let newPercent = '0';
+        if (totalSum > 0) {
+          newPercent = ((itemTotal / totalSum) * 100).toFixed(3);
+        }
+        return { ...item, percentage: newPercent };
+      });
+
+      return newItems;
+    };
+
+    if (isHardener) {
+      setHardenerItems(updater);
+    } else {
+      setBaseItems(updater);
+      // Recalculate hardener totalPercentages when base changes
+      setHardenerItems(prevHardener =>
+        prevHardener.map(item => {
+          const pct = parseFloat(item.percentage.toString()) || 0;
+          const baseTotal = calculateListTotalPercentage(baseItems);
+          const hardenerTotal = 100 - baseTotal;
+          const totalPct = hardenerTotal > 0 ? (pct * hardenerTotal / 100) : 0;
+          const rmProduct = rmMasterProducts.find(rm => rm.masterProductId === item.productId);
+          const density =
+            rmProduct?.RMDensity && parseFloat(rmProduct.RMDensity.toString()) > 0
+              ? parseFloat(rmProduct.RMDensity.toString())
+              : 1;
+          return {
+            ...item,
+            totalPercentage: totalPct.toFixed(3),
+            wtInLtr: (totalPct / density).toFixed(3),
+          };
+        })
+      );
+    }
+  };
+
   // Per-Table Copy/Paste
   const handleCopyTable = (items: RawMaterialItem[]) => {
     if (items.length === 0) {
@@ -782,7 +891,8 @@ const DoubleProductDevelopment = () => {
     items: RawMaterialItem[],
     isHardener: boolean,
     productName: string,
-    showGrandTotal: boolean = false
+    showGrandTotal: boolean = false,
+    baseItemsForCalculation?: RawMaterialItem[]
   ) => {
     return (
       <div className="overflow-x-auto rounded-lg border border-[var(--border)] mt-4">
@@ -829,7 +939,7 @@ const DoubleProductDevelopment = () => {
             <tbody className="divide-y divide-[var(--border)]">
               {items.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-[var(--text-secondary)]">
+                  <td colSpan={8} className="px-4 py-8 text-center text-[var(--text-secondary)]">
                     No materials added yet.
                   </td>
                 </tr>
@@ -867,7 +977,12 @@ const DoubleProductDevelopment = () => {
                           data-row-index={items.indexOf(item)}
                           data-column="totalPercentage"
                           step="0.01"
-                          className="w-full px-2 py-1 rounded border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent outline-none transition-all"
+                          readOnly={isHardener}
+                          className={
+                            isHardener
+                              ? "w-full px-2 py-1 rounded border border-[var(--border)] bg-[var(--surface-highlight)] text-[var(--text-secondary)] cursor-not-allowed focus:outline-none"
+                              : "w-full px-2 py-1 rounded border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent outline-none transition-all"
+                          }
                         />
                       </td>
                       <td className="px-4 py-2">
@@ -890,7 +1005,12 @@ const DoubleProductDevelopment = () => {
                           data-row-index={items.indexOf(item)}
                           data-column="percentage"
                           step="0.01"
-                          className="w-full px-2 py-1 rounded border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent outline-none transition-all"
+                          readOnly={isHardener}
+                          className={
+                            isHardener
+                              ? "w-full px-2 py-1 rounded border border-[var(--border)] bg-[var(--surface-highlight)] text-[var(--text-secondary)] cursor-not-allowed focus:outline-none"
+                              : "w-full px-2 py-1 rounded border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent outline-none transition-all"
+                          }
                         />
                       </td>
                       <td className="px-4 py-2">
@@ -963,8 +1083,14 @@ const DoubleProductDevelopment = () => {
                 <td colSpan={2} className="px-4 py-3 text-right">
                   Totals:
                 </td>
-                <td className="px-4 py-3 font-bold text-[var(--text-primary)]">
-                  {calculateListTotalPercentage(items).toFixed(3)}%
+                <td className="px-4 py-3">
+                  <input
+                    type="number"
+                    value={isHardener ? (100 - calculateListTotalPercentage(baseItemsForCalculation || [])).toFixed(3) : calculateListTotalPercentage(items).toFixed(3)}
+                    step="0.01"
+                    readOnly
+                    className="w-full px-2 py-1 rounded border border-[var(--border)] bg-[var(--surface-highlight)] text-[var(--text-secondary)] cursor-not-allowed font-bold"
+                  />
                 </td>
                 <td
                   className={`px-4 py-3 ${Math.abs(calculateTotalPercentage(items) - 100) < 0.01 ? 'text-[var(--success)]' : ''}`}
@@ -988,12 +1114,28 @@ const DoubleProductDevelopment = () => {
                         Target:
                       </td>
                       <td className="px-4 py-3 font-bold text-[var(--text-primary)]">
-                        {(
-                          (parseFloat(ratioBase || '0') / (parseFloat(ratioHardener || '1') || 1)) *
-                          calculateTotalWtInLtr(hardenerItems)
-                        ).toFixed(3)}
+                        {(() => {
+                          const targetValue = (
+                            (parseFloat(ratioBase || '0') / (parseFloat(ratioHardener || '1') || 1)) *
+                            calculateTotalWtInLtr(hardenerItems)
+                          );
+                          return targetValue.toFixed(3);
+                        })()}
                       </td>
-                      <td colSpan={3}></td>
+                      <td className="px-4 py-3 text-right font-bold text-[var(--text-secondary)]">
+                        Difference:
+                      </td>
+                      <td className="px-4 py-3 font-bold text-[var(--text-primary)]">
+                        {(() => {
+                          const targetValue = (
+                            (parseFloat(ratioBase || '0') / (parseFloat(ratioHardener || '1') || 1)) *
+                            calculateTotalWtInLtr(hardenerItems)
+                          );
+                          const totalWtLtr = calculateTotalWtInLtr(items);
+                          return (totalWtLtr - targetValue).toFixed(3);
+                        })()}
+                      </td>
+                      <td></td>
                     </>
                   ) : (
                     <td colSpan={5}></td>
@@ -1205,26 +1347,23 @@ const DoubleProductDevelopment = () => {
               onChange={val => setSelectedRmId(val ?? '')}
               placeholder="Search RM..."
               className="w-full"
+              onEnter={() => addButtonRef.current?.click()}
             />
           </div>
-          <div className="flex gap-2">
-            <Button
-              variant="secondary"
-              onClick={() => handleAddItem(true)}
-              disabled={!selectedRmId || !linkedHardenerId}
-              leftIcon={<Plus size={16} />}
-              className="min-w-[160px]"
-            >
-              Add to Hardener
-            </Button>
-            <Button
-              variant="primary"
-              onClick={() => handleAddItem(false)}
+          <div className="flex flex-col gap-2 items-end">
+            <Toggle
+              checked={isAddToHardener}
+              onChange={setIsAddToHardener}
               disabled={!selectedRmId}
+            />
+            <Button
+              variant={isAddToHardener ? "secondary" : "primary"}
+              onClick={() => handleAddItem(isAddToHardener)}
+              disabled={!selectedRmId || (isAddToHardener && !linkedHardenerId)}
               leftIcon={<Plus size={16} />}
               className="min-w-[160px]"
             >
-              Add to Base
+              Add to {isAddToHardener ? 'Hardener' : 'Base'}
             </Button>
           </div>
         </div>
@@ -1249,8 +1388,9 @@ const DoubleProductDevelopment = () => {
               hardenerItems,
               true,
               masterProducts.find(p => p.masterProductId === linkedHardenerId)?.masterProductName ||
-                '',
-              true
+              '',
+              true,
+              baseItems
             )}
           </div>
         ) : (

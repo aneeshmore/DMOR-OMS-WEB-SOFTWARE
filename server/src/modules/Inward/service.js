@@ -137,7 +137,6 @@ export class InwardService {
           newProductId,
           newQuantity,
           newUnitPrice,
-          newUnitPrice,
           newSkuId,
           inwardId
         );

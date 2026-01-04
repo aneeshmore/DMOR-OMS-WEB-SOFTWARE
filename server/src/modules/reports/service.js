@@ -746,8 +746,8 @@ export class ReportsService {
       const conditions = [];
       if (productIdNum) {
         if (isMasterProduct) {
-          // For master products (RM/PM), filter by masterProductId through products join
-          conditions.push(eq(products.masterProductId, productIdNum));
+          // For master products (RM/PM), filter by masterProductId directly in inventory_transactions
+          conditions.push(eq(inventoryTransactions.masterProductId, productIdNum));
         } else {
           conditions.push(eq(inventoryTransactions.productId, productIdNum));
         }
@@ -770,6 +770,8 @@ export class ReportsService {
       }
 
       // Fetch inventory transactions with enriched references
+      // For FG: join via products.masterProductId
+      // For RM/PM: join directly via inventoryTransactions.masterProductId
       const query = db
         .select({
           tx: inventoryTransactions,
@@ -785,7 +787,11 @@ export class ReportsService {
         })
         .from(inventoryTransactions)
         .leftJoin(products, eq(inventoryTransactions.productId, products.productId))
-        .leftJoin(masterProducts, eq(products.masterProductId, masterProducts.masterProductId))
+        // Join masterProducts: use products.masterProductId for FG, or inventoryTransactions.masterProductId for RM/PM
+        .leftJoin(
+          masterProducts,
+          sql`COALESCE(${products.masterProductId}, ${inventoryTransactions.masterProductId}) = ${masterProducts.masterProductId}`
+        )
         .leftJoin(
           masterProductFG,
           eq(masterProducts.masterProductId, masterProductFG.masterProductId)

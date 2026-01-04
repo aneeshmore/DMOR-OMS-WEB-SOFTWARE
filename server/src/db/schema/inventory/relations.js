@@ -11,6 +11,7 @@ import { materialDiscard } from './material-discard.js';
 import { stockLedger } from './stock-ledger.js';
 import { inventoryTransactions } from './inventory-transactions.js';
 import { products } from '../products/products.js';
+import { masterProducts } from '../products/master-products.js';
 import { employees } from '../organization/employees.js';
 
 // Suppliers Relations
@@ -34,11 +35,17 @@ export const stockLedgerRelations = relations(stockLedger, ({ one }) => ({}));
 
 // Inventory Transactions Relations
 export const inventoryTransactionsRelations = relations(inventoryTransactions, ({ one }) => ({
+  // For FG - links to SKU in products table
   product: one(products, {
     fields: [inventoryTransactions.productId],
     references: [products.productId],
   }),
-  createdBy: one(employees, {
+  // For RM/PM - links directly to master_products table
+  masterProduct: one(masterProducts, {
+    fields: [inventoryTransactions.masterProductId],
+    references: [masterProducts.masterProductId],
+  }),
+  createdByEmployee: one(employees, {
     fields: [inventoryTransactions.createdBy],
     references: [employees.employeeId],
   }),

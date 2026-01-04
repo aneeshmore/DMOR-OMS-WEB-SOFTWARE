@@ -9,14 +9,17 @@
 import { bigserial, integer, varchar, numeric, text, timestamp } from 'drizzle-orm/pg-core';
 import { appSchema } from '../core/app-schema.js';
 import { products } from '../products/products.js';
+import { masterProducts } from '../products/master-products.js';
 import { employees } from '../organization/employees.js';
 
 export const inventoryTransactions = appSchema.table('inventory_transactions', {
   transactionId: bigserial('transaction_id', { mode: 'bigint' }).primaryKey(),
 
-  productId: integer('product_id')
-    .notNull()
-    .references(() => products.productId),
+  // For FG (Finished Goods) - references the SKU in products table
+  productId: integer('product_id').references(() => products.productId),
+
+  // For RM/PM - references the master product directly (no SKUs for RM/PM)
+  masterProductId: integer('master_product_id').references(() => masterProducts.masterProductId),
 
   transactionType: varchar('transaction_type', { length: 50 }).notNull(),
   // Values: 'Inward', 'Production Consumption', 'Production Output',

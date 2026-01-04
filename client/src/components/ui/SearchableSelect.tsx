@@ -21,6 +21,7 @@ interface SearchableSelectProps<T = any> {
   creatable?: boolean; // Allow creating new values
   onCreateNew?: (inputValue: string) => void; // Callback when creating new value
   allowCustomValue?: boolean; // If true, preserve custom values that don't match options (useful with creatable)
+  onEnter?: () => void; // Callback when Enter is pressed and an option is selected
 }
 
 const SearchableSelect = <T = any,>({
@@ -35,6 +36,7 @@ const SearchableSelect = <T = any,>({
   creatable = false,
   onCreateNew,
   allowCustomValue = false,
+  onEnter,
 }: SearchableSelectProps<T>) => {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -138,6 +140,10 @@ const SearchableSelect = <T = any,>({
           const indexToSelect = highlightedIndex >= 0 ? highlightedIndex : 0;
           if (filteredOptions[indexToSelect]) {
             handleSelect(filteredOptions[indexToSelect]);
+            // Call onEnter callback if provided
+            if (onEnter) {
+              onEnter();
+            }
           }
         } else if (showCreateOption) {
           // Create new if enabled and no match

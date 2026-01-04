@@ -245,65 +245,46 @@ export class DiscardRepository {
     }
 
     // 4. Record Inventory Transaction for Reports/Ledger
+    // For FG: use productId
+    // For RM/PM: use masterProductId directly (no fake SKUs needed)
     try {
-      let transactionProductId = data.productId;
-
-      // For RM/PM, data.productId is a Master ID. We need a valid SKU ID for inventory_transactions.
-      if (type === 'RM' || type === 'PM') {
-        const [existingSku] = await db
-          .select({ productId: products.productId })
-          .from(products)
-          .where(eq(products.masterProductId, data.productId))
-          .limit(1);
-
-        if (existingSku) {
-          transactionProductId = existingSku.productId;
-        } else {
-          // Create default SKU for this RM/PM so we can log transactions
-          const [mp] = await db
-            .select({
-              name: masterProducts.masterProductName,
-              unitId: masterProducts.defaultUnitId,
-            })
-            .from(masterProducts)
-            .where(eq(masterProducts.masterProductId, data.productId))
-            .limit(1);
-
-          if (mp) {
-            console.log(
-              `[DiscardRepo] Creating default SKU for ${type} (MasterID: ${data.productId}) to log transaction`
-            );
-            const [newSku] = await db
-              .insert(products)
-              .values({
-                masterProductId: data.productId,
-                productName: mp.name,
-                productType: type,
-                unitId: mp.unitId,
-                isActive: true,
-                availableQuantity: '0', // Initial 0, just a placeholder for the ID
-                sellingPrice: '0',
-              })
-              .returning({ productId: products.productId });
-
-            if (newSku) transactionProductId = newSku.productId;
-          }
-        }
+      if (type === 'FG') {
+        // FG: Log with productId (SKU)
+        await db.insert(inventoryTransactions).values({
+          productId: data.productId, // FG uses productId (SKU)
+          masterProductId: null, // Not used for FG
+          transactionType: 'Discard',
+          quantity: -data.quantity, // Negative for outward/discard
+          balanceBefore,
+          balanceAfter,
+          referenceType: 'Discard',
+          referenceId: newDiscard.discardId,
+          notes: `Discard (FG): ${data.reason || 'No reason provided'}`,
+          createdBy: data.createdBy || 1,
+          createdAt: new Date(),
+        });
+        console.log(
+          `[DiscardRepo] Logged FG inventory transaction for productId: ${data.productId}`
+        );
+      } else if (type === 'RM' || type === 'PM') {
+        // RM/PM: Log with masterProductId directly
+        await db.insert(inventoryTransactions).values({
+          productId: null, // Not used for RM/PM
+          masterProductId: data.productId, // RM/PM uses masterProductId
+          transactionType: 'Discard',
+          quantity: -data.quantity, // Negative for outward/discard
+          balanceBefore,
+          balanceAfter,
+          referenceType: 'Discard',
+          referenceId: newDiscard.discardId,
+          notes: `Discard (${type}): ${data.reason || 'No reason provided'}`,
+          createdBy: data.createdBy || 1,
+          createdAt: new Date(),
+        });
+        console.log(
+          `[DiscardRepo] Logged ${type} inventory transaction for masterProductId: ${data.productId}`
+        );
       }
-
-      await db.insert(inventoryTransactions).values({
-        productId: transactionProductId, // Use the correct SKU ID
-        transactionType: 'Discard',
-        quantity: -data.quantity, // Negative for outward/discard
-        balanceBefore,
-        balanceAfter,
-        referenceType: 'Discard',
-        referenceId: newDiscard.discardId,
-        notes: `Discard (${type}): ${data.reason || 'No reason provided'}`,
-        createdBy: data.createdBy || 1,
-        createdAt: new Date(),
-      });
-      console.log(`[DiscardRepo] Logged inventory transaction for SKU ID: ${transactionProductId}`);
     } catch (err) {
       console.error('[DiscardRepo] Failed to log inventory transaction:', err);
       // Don't fail the operation if transaction logging fails

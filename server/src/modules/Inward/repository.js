@@ -283,96 +283,90 @@ export class InwardRepository {
         });
     }
 
-    // 3. Log Inventory Transaction (common for all types now)
-    // For RM/PM, we don't have a specific productId (SKU) from frontend sometimes,
-    // but inventory_transactions requires a productId FK to 'products' table.
-    // However, our schema might expect productId to be an actual SKU ID from 'products' table.
-    // IF the system treats Master Products as SKUs (one-to-one) for RM/PM, then we need to find that ID.
-
-    let transactionProductId = productId;
-
-    // If no specific SKU ID (likely RM/PM), try to find the default SKU for this Master Product
-    // If NOT found, we MUST create one to allow logging to inventory_transactions
-    if (!transactionProductId) {
-      // Check for existing SKU
-      const product = await db
-        .select({ productId: products.productId })
-        .from(products)
-        .where(eq(products.masterProductId, masterProductId))
-        .limit(1);
-
-      if (product.length > 0) {
-        transactionProductId = product[0].productId;
-      } else {
-        // CREATE Default SKU for this Master Product (RM/PM)
-        console.log(
-          `[Repo] No SKU found for MasterID ${masterProductId}. Creating default SKU for Ledger...`
-        );
-
-        // We need Master Product details to create SKU properly
-        const mpDetails = await db
-          .select({
-            name: masterProducts.masterProductName,
-            unitId: masterProducts.defaultUnitId,
-            type: masterProducts.productType,
-          })
-          .from(masterProducts)
-          .where(eq(masterProducts.masterProductId, masterProductId))
-          .limit(1);
-
-        if (mpDetails.length > 0) {
-          const newSku = await db
-            .insert(products)
-            .values({
-              masterProductId,
-              productName: mpDetails[0].name, // Use Master Name as Product Name
-              productType: mpDetails[0].type,
-              unitId: mpDetails[0].unitId,
-              isActive: true,
-              availableQuantity: '0', // Initial 0, will be updated by transaction
-              // Default other required fields if any
-              sellingPrice: '0',
-            })
-            .returning({ productId: products.productId });
-
-          if (newSku.length > 0) {
-            transactionProductId = newSku[0].productId;
-            console.log(`[Repo] Created new SKU ID: ${transactionProductId}`);
-          }
-        }
-      }
-    }
-
-    if (inwardId && transactionProductId) {
+    // 3. Log Inventory Transaction
+    // For FG: use productId (SKU ID from products table)
+    // For RM/PM: use masterProductId directly (no SKUs for RM/PM)
+    if (inwardId) {
       console.log(`[Repo] Logging Inward Transaction for InwardID: ${inwardId}`);
       try {
-        // Get current product balance for accurate tracking
-        const currentProduct = await db
-          .select({ availableQuantity: products.availableQuantity })
-          .from(products)
-          .where(eq(products.productId, transactionProductId))
-          .limit(1);
+        if (productType === 'FG' && productId) {
+          // FG: Log with productId (SKU)
+          const currentProduct = await db
+            .select({ availableQuantity: products.availableQuantity })
+            .from(products)
+            .where(eq(products.productId, productId))
+            .limit(1);
 
-        const balanceBefore = currentProduct[0]?.availableQuantity
-          ? parseInt(currentProduct[0].availableQuantity)
-          : 0;
-        const balanceAfter = balanceBefore + parseInt(quantity);
+          const balanceAfter = currentProduct[0]?.availableQuantity
+            ? parseInt(currentProduct[0].availableQuantity)
+            : parseInt(quantity);
+          const balanceBefore = balanceAfter - parseInt(quantity);
 
-        await db.insert(inventoryTransactions).values({
-          productId: transactionProductId,
-          transactionType: 'Inward',
-          quantity: parseInt(quantity), // Positive integer for Inward
-          balanceBefore,
-          balanceAfter,
-          referenceType: 'Inward',
-          referenceId: parseInt(inwardId),
-          notes: 'Auto-generated from Material Inward',
-          createdBy: 1, // System or default admin. TODO: Pass actual user ID
-          createdAt: new Date(),
-        });
+          console.log(
+            `[Repo] FG Balance tracking: Before=${balanceBefore}, After=${balanceAfter}, Qty=${quantity}`
+          );
+
+          await db.insert(inventoryTransactions).values({
+            productId, // FG uses productId (SKU)
+            masterProductId: null, // Not used for FG
+            transactionType: 'Inward',
+            quantity: parseInt(quantity),
+            balanceBefore,
+            balanceAfter,
+            referenceType: 'Inward',
+            referenceId: parseInt(inwardId),
+            notes: 'Auto-generated from Material Inward (FG)',
+            createdBy: 1,
+            createdAt: new Date(),
+          });
+        } else if (productType === 'RM' || productType === 'PM') {
+          // RM/PM: Log with masterProductId directly
+          // Get balance from the appropriate master product table
+          let balanceAfter = parseInt(quantity);
+
+          if (productType === 'RM') {
+            const rmStock = await db
+              .select({ availableQty: masterProductRM.availableQty })
+              .from(masterProductRM)
+              .where(eq(masterProductRM.masterProductId, masterProductId))
+              .limit(1);
+            if (rmStock.length > 0) {
+              balanceAfter = parseInt(rmStock[0].availableQty) || parseInt(quantity);
+            }
+          } else if (productType === 'PM') {
+            const pmStock = await db
+              .select({ availableQty: masterProductPM.availableQty })
+              .from(masterProductPM)
+              .where(eq(masterProductPM.masterProductId, masterProductId))
+              .limit(1);
+            if (pmStock.length > 0) {
+              balanceAfter = parseInt(pmStock[0].availableQty) || parseInt(quantity);
+            }
+          }
+
+          const balanceBefore = balanceAfter - parseInt(quantity);
+
+          console.log(
+            `[Repo] ${productType} Balance tracking: Before=${balanceBefore}, After=${balanceAfter}, Qty=${quantity}`
+          );
+
+          await db.insert(inventoryTransactions).values({
+            productId: null, // Not used for RM/PM
+            masterProductId, // RM/PM uses masterProductId
+            transactionType: 'Inward',
+            quantity: parseInt(quantity),
+            balanceBefore,
+            balanceAfter,
+            referenceType: 'Inward',
+            referenceId: parseInt(inwardId),
+            notes: `Auto-generated from Material Inward (${productType})`,
+            createdBy: 1,
+            createdAt: new Date(),
+          });
+        }
       } catch (err) {
         console.error('[Repo] Failed to log inventory transaction:', err);
-        // We log but don't fail the operation to preserve data integrity of at least the inward record
+        // We log but don't fail the operation to preserve data integrity
       }
     }
   }
