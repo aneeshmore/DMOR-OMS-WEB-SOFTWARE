@@ -175,11 +175,6 @@ export default function CompleteBatchModal({
   const handleSubmit = async () => {
     if (isSubmitting) return;
 
-    if (!actualQuantity || actualQuantity <= 0) {
-      showToast.error('Please enter actual quantity produced');
-      return;
-    }
-
     if (!startDate || !startTime || !endDate || !endTime) {
       showToast.error('Please enter start and end date/time');
       return;

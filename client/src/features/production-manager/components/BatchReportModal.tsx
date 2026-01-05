@@ -132,6 +132,54 @@ export default function BatchReportModal({
     0
   );
 
+  const totalActualQty = orders.reduce(
+    (sum: number, o: any) => sum + (Number(o.batchProduct?.producedUnits) || 0),
+    0
+  );
+
+  // Calculate screen totals for product table
+  let screenTotalLtr = 0;
+  let screenTotalKg = 0;
+
+  if (batchData?.status === 'Completed' && orders.length > 0) {
+    orders.forEach((o: any) => {
+      const capacityLtr = parseFloat(o.packagingCapacity || '0');
+      const fillingDensity =
+        parseFloat(o.product?.fillingDensity || '0') || parseFloat(batchData.fgDensity || '0');
+      const actualQty = parseFloat(o.batchProduct?.producedUnits || '0');
+      const ltr = actualQty * capacityLtr;
+      const kg = ltr * fillingDensity;
+      screenTotalLtr += ltr;
+      screenTotalKg += kg;
+    });
+  } else {
+    const ordersMapScreen = new Map<number, any>();
+    orders.forEach((o: any) => {
+      const productId = o.batchProduct?.productId || o.product?.productId;
+      if (productId) ordersMapScreen.set(productId, o);
+    });
+
+    const skusToShow =
+      relatedSkus.length > 0
+        ? relatedSkus
+        : orders.map((o: any) => ({
+            productId: o.product?.productId,
+            productName: o.product?.productName || 'Unknown',
+          }));
+
+    skusToShow.forEach((sku: any) => {
+      const order = ordersMapScreen.get(sku.productId);
+      const capacityLtr = parseFloat(order?.packagingCapacity || '0');
+      const fillingDensity =
+        parseFloat(order?.product?.fillingDensity || '0') || parseFloat(batchData?.fgDensity || '0');
+      const plannedQty = parseFloat(order?.batchProduct?.plannedUnits || '0');
+      const ltr = plannedQty * capacityLtr;
+      const kg = ltr * fillingDensity;
+      screenTotalLtr += ltr;
+      screenTotalKg += kg;
+    });
+  }
+
   // Export to PDF
   const handleExportPDF = () => {
     if (!batchData) return;
@@ -224,8 +272,9 @@ export default function BatchReportModal({
           ],
         ],
         theme: 'grid',
-        styles: { fontSize: 8, cellPadding: 2, minCellHeight: 6, lineColor: 0, lineWidth: 0.2 },
-        headStyles: { fillColor: [220, 220, 220], textColor: 0, fontStyle: 'bold', fontSize: 7 },
+        styles: { fontSize: 8, cellPadding: 2, minCellHeight: 6, lineColor: 0, lineWidth: 0.2, fillColor: [255, 255, 255] },
+        headStyles: { textColor: 0, fontStyle: 'bold', fontSize: 7, fillColor: [255, 255, 255] },
+        bodyStyles: { fillColor: [255, 255, 255] },
         columnStyles: {
           0: { cellWidth: 25 },
           1: { cellWidth: 30, halign: 'right' },
@@ -306,8 +355,8 @@ export default function BatchReportModal({
           productName,
           plannedQty > 0 ? plannedQty.toString() : '0',
           actualQty > 0 ? actualQty.toString() : '',
-          ltr > 0 ? ltr.toFixed(3) : '',
-          kg > 0 ? kg.toFixed(3) : '',
+          '',
+          '',
         ];
       });
     } else {
@@ -338,8 +387,8 @@ export default function BatchReportModal({
           productName,
           plannedQty > 0 ? plannedQty.toString() : '0',
           actualQty > 0 ? actualQty.toString() : '',
-          ltr > 0 ? ltr.toFixed(3) : '',
-          kg > 0 ? kg.toFixed(3) : '',
+          '',
+          '',
         ];
       });
 
@@ -357,8 +406,8 @@ export default function BatchReportModal({
             o.product?.productName || 'Unknown',
             plannedQty > 0 ? plannedQty.toString() : '0',
             actualQty > 0 ? actualQty.toString() : '',
-            ltr > 0 ? ltr.toFixed(3) : '',
-            kg > 0 ? kg.toFixed(3) : '',
+            '',
+            '',
           ];
         });
       }
@@ -385,16 +434,18 @@ export default function BatchReportModal({
       body: bomData,
       foot: [
         [
-          { content: 'Total', colSpan: 3, styles: { halign: 'right', fontStyle: 'bold' } },
-          { content: totalPlannedRawMaterials.toFixed(3), styles: { fontStyle: 'bold' } },
+          { content: 'Total', colSpan: 3, styles: { halign: 'right', fontStyle: 'bold', textColor: 0 } },
+          { content: totalPlannedRawMaterials.toFixed(3), styles: { fontStyle: 'bold', textColor: 0 } },
           '',
         ],
       ],
       theme: 'grid',
-      styles: { fontSize: 8, cellPadding: 2, minCellHeight: 6, lineColor: 0, lineWidth: 0.2 },
-      headStyles: { fillColor: [220, 220, 220], textColor: 0, fontStyle: 'bold' },
+      styles: { fontSize: 8, cellPadding: 2, minCellHeight: 6, lineColor: 0, lineWidth: 0.2, fillColor: [255, 255, 255] },
+      headStyles: { textColor: 0, fontStyle: 'bold', fillColor: [255, 255, 255] },
+      bodyStyles: { fillColor: [255, 255, 255] },
       margin: { left: 14, right: 110 }, // Width approx 86
       tableWidth: 86,
+      pageBreak: 'avoid',
       columnStyles: {
         0: { cellWidth: 8 }, // Seq
         1: { cellWidth: 41 }, // Product (Wider)
@@ -422,18 +473,20 @@ export default function BatchReportModal({
       body: productData,
       foot: [
         [
-          { content: 'Total', styles: { halign: 'right', fontStyle: 'bold' } },
-          { content: totalPackages.toString(), styles: { fontStyle: 'bold', halign: 'center' } },
-          { content: '', styles: { fontStyle: 'bold' } },
-          { content: totalLtr.toFixed(3), styles: { fontStyle: 'bold' } },
-          { content: totalKg.toFixed(3), styles: { fontStyle: 'bold' } },
+          { content: 'Total', styles: { halign: 'right', fontStyle: 'bold', textColor: 0 } },
+          { content: totalPackages.toString(), styles: { fontStyle: 'bold', halign: 'center', textColor: 0 } },
+          { content: '', styles: { fontStyle: 'bold', textColor: 0 } },
+          { content: '', styles: { fontStyle: 'bold', textColor: 0 } },
+          { content: '', styles: { fontStyle: 'bold', textColor: 0 } },
         ],
       ],
       theme: 'grid',
-      styles: { fontSize: 8, cellPadding: 2, minCellHeight: 6, lineColor: 0, lineWidth: 0.2 },
-      headStyles: { fillColor: [220, 220, 220], textColor: 0, fontStyle: 'bold' },
+      styles: { fontSize: 8, cellPadding: 2, minCellHeight: 6, lineColor: 0, lineWidth: 0.2, fillColor: [255, 255, 255] },
+      headStyles: { textColor: 0, fontStyle: 'bold', fillColor: [255, 255, 255] },
+      bodyStyles: { fillColor: [255, 255, 255] },
       margin: { left: 110 },
       tableWidth: 86,
+      pageBreak: 'avoid',
     });
 
     const rightTableFinalY = (doc as any).lastAutoTable.finalY;
@@ -461,7 +514,7 @@ export default function BatchReportModal({
         return [
           productName,
           appQty > 0 ? appQty.toFixed(2) : '0.00',
-          batchQty > 0 ? batchQty.toString() : '',
+          '',
           '', // DISPATCH QTY - empty
           '', // TOTAL - empty
           '', // ACTUAL QTY - empty
@@ -476,13 +529,14 @@ export default function BatchReportModal({
         ],
         body: prodSummaryData,
         theme: 'grid',
-        styles: { fontSize: 8, cellPadding: 1.5, minCellHeight: 6, lineColor: 0, lineWidth: 0.2 },
+        styles: { fontSize: 8, cellPadding: 1.5, minCellHeight: 6, lineColor: 0, lineWidth: 0.2, fillColor: [255, 255, 255] },
         headStyles: {
-          fillColor: [220, 220, 220],
           textColor: 0,
           fontStyle: 'bold',
           halign: 'center',
+          fillColor: [255, 255, 255]
         },
+        bodyStyles: { fillColor: [255, 255, 255] },
         columnStyles: {
           0: { cellWidth: 50 },
           1: { cellWidth: 20, halign: 'center' },
@@ -609,7 +663,7 @@ export default function BatchReportModal({
                     </h4>
                     <table className="w-full border-collapse border border-gray-600 text-xs">
                       <thead>
-                        <tr className="bg-gray-200">
+                        <tr>
                           <th className="border border-gray-600 px-1 py-0.5">Parameter</th>
                           <th className="border border-gray-600 px-1 py-0.5">Standard</th>
                           <th className="border border-gray-600 px-1 py-0.5">Actual</th>
@@ -701,7 +755,7 @@ export default function BatchReportModal({
               <div className="flex-1">
                 <table className="w-full border-collapse border border-gray-800 text-sm mb-4">
                   <thead>
-                    <tr className="bg-gray-200">
+                    <tr>
                       <th className="border border-gray-800 px-2 py-1 w-8">Seq</th>
                       <th className="border border-gray-800 px-2 py-1">Product</th>
                       <th className="border border-gray-800 px-2 py-1 w-12">Wait</th>
@@ -737,9 +791,6 @@ export default function BatchReportModal({
                             {m.requiredQuantity.toFixed(3)}
                           </td>
                           <td className="px-2 py-1 text-xs border border-gray-800 text-right">
-                            {reportType === 'completion-chart' && m.batchMaterial?.actualQuantity
-                              ? parseFloat(m.batchMaterial.actualQuantity).toFixed(3)
-                              : ''}
                           </td>
                         </tr>
                       ))}
@@ -771,16 +822,13 @@ export default function BatchReportModal({
                               {m.requiredQuantity.toFixed(3)}
                             </td>
                             <td className="px-2 py-1 text-xs border border-gray-800 text-right font-bold">
-                              {reportType === 'completion-chart' && m.batchMaterial?.actualQuantity
-                                ? parseFloat(m.batchMaterial.actualQuantity).toFixed(3)
-                                : ''}
                             </td>
                           </tr>
                         );
                       })}
                   </tbody>
                   <tfoot>
-                    <tr className="bg-teal-500 text-white font-bold">
+                    <tr className="bg-white text-black font-bold">
                       <td colSpan={2} className="border border-gray-800 px-2 py-1 text-right">
                         Total
                       </td>
@@ -798,7 +846,7 @@ export default function BatchReportModal({
               <div className="flex-1">
                 <table className="w-full border-collapse border border-gray-800 text-sm mb-4">
                   <thead>
-                    <tr className="bg-gray-200">
+                    <tr>
                       <th className="border border-gray-800 px-2 py-1">Shade</th>
                       <th className="border border-gray-800 px-2 py-1 w-12">QTY</th>
                       <th className="border border-gray-800 px-2 py-1 w-16">ACT QTY</th>
@@ -835,10 +883,8 @@ export default function BatchReportModal({
                                 {actualQty > 0 ? actualQty : ''}
                               </td>
                               <td className="border border-gray-800 px-2 py-1 text-right">
-                                {ltr > 0 ? ltr.toFixed(3) : ''}
                               </td>
                               <td className="border border-gray-800 px-2 py-1 text-right">
-                                {kg > 0 ? kg.toFixed(3) : ''}
                               </td>
                             </tr>
                           );
@@ -884,10 +930,8 @@ export default function BatchReportModal({
                               {actualQty > 0 ? actualQty : ''}
                             </td>
                             <td className="border border-gray-800 px-2 py-1 text-right">
-                              {ltr > 0 ? ltr.toFixed(3) : ''}
                             </td>
                             <td className="border border-gray-800 px-2 py-1 text-right">
-                              {kg > 0 ? kg.toFixed(3) : ''}
                             </td>
                           </tr>
                         );
@@ -895,14 +939,19 @@ export default function BatchReportModal({
                     })()}
                   </tbody>
                   <tfoot>
-                    <tr className="bg-teal-500 text-white font-bold">
-                      <td className="border border-gray-800 px-2 py-1 text-right">Total</td>
+                    <tr className="bg-white text-black font-bold">
+                      <td className="border border-gray-800 px-2 py-1 text-right" colSpan={1}>
+                        Total
+                      </td>
                       <td className="border border-gray-800 px-2 py-1 text-center">
                         {totalPackages}
                       </td>
-                      <td className="border border-gray-800 px-2 py-1"></td>
-                      <td className="border border-gray-800 px-2 py-1"></td>
-                      <td className="border border-gray-800 px-2 py-1"></td>
+                      <td className="border border-gray-800 px-2 py-1 text-center">
+                      </td>
+                      <td className="border border-gray-800 px-2 py-1 text-right">
+                      </td>
+                      <td className="border border-gray-800 px-2 py-1 text-right">
+                      </td>
                     </tr>
                   </tfoot>
                 </table>
@@ -918,7 +967,7 @@ export default function BatchReportModal({
                 <div className="overflow-x-auto">
                   <table className="w-full border-collapse border border-gray-800 text-sm">
                     <thead>
-                      <tr className="bg-gray-200">
+                      <tr>
                         <th className="border border-gray-800 px-2 py-1 text-left">Product</th>
                         <th className="border border-gray-800 px-2 py-1 w-16 text-center">
                           APP QTY
@@ -961,7 +1010,6 @@ export default function BatchReportModal({
                                 {appQty > 0 ? appQty.toFixed(2) : '0.00'}
                               </td>
                               <td className="border border-gray-800 px-2 py-1 text-center">
-                                {batchQty > 0 ? batchQty : ''}
                               </td>
                               <td className="border border-gray-800 px-2 py-1 text-center"></td>
                               <td className="border border-gray-800 px-2 py-1 text-center"></td>

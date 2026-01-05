@@ -20,7 +20,6 @@ import {
   ChevronDown,
   ChevronUp,
   Play,
-  Timer,
   Clock,
   Calendar,
   Plus,
@@ -30,7 +29,6 @@ import { showToast } from '@/utils/toast';
 import toast from 'react-hot-toast';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import CompleteBatchModal from '../components/CompleteBatchModal';
 import BatchReportModal from '../components/BatchReportModal';
 import {
   DndContext,
@@ -92,10 +90,23 @@ interface DistributionInfo {
 }
 
 // Sortable Row Component for DnD
-function SortableRow({ id, children }: { id: string; children: React.ReactNode }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id,
-  });
+function SortableRow({ id, children, isDisabled = false }: { id: string; children: React.ReactNode; isDisabled?: boolean }) {
+  const sortable = useSortable({ id, disabled: isDisabled });
+
+  if (isDisabled) {
+    return (
+      <tr className="hover:bg-[var(--surface-hover)]">
+        <td className="px-2 py-2 text-center">
+          <div className="p-1 text-[var(--text-secondary)]">
+            <GripVertical size={16} />
+          </div>
+        </td>
+        {children}
+      </tr>
+    );
+  }
+
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = sortable;
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -1228,7 +1239,7 @@ export default function ScheduleBatchPage() {
       // Auto-fill actual values with calculated/planned values by default - CHANGED: Set to '' as per user request to force manual entry
       setActualQuantity('');
       setActualDensity('');
-      setActualWaterPercentage('');
+      setActualWaterPercentage(0);
       setActualViscosity('');
 
       // Set planned/reference values from the recipe (fetched from master_product_fg via DB join)
@@ -1660,7 +1671,7 @@ export default function ScheduleBatchPage() {
         body: paddedBomData,
         theme: 'grid',
         styles: { fontSize: 8, cellPadding: 1, lineColor: [0, 0, 0], lineWidth: 0.1 },
-        headStyles: { fillColor: [240, 240, 240], textColor: [0, 0, 0], fontStyle: 'bold' },
+        headStyles: { textColor: [0, 0, 0], fontStyle: 'bold' },
         margin: { left: 14, right: 110 }, // Width approx 86
         tableWidth: 86,
       });
@@ -1672,7 +1683,7 @@ export default function ScheduleBatchPage() {
         body: paddedProdData,
         theme: 'grid',
         styles: { fontSize: 8, cellPadding: 1, lineColor: [0, 0, 0], lineWidth: 0.1 },
-        headStyles: { fillColor: [240, 240, 240], textColor: [0, 0, 0], fontStyle: 'bold' },
+        headStyles: { textColor: [0, 0, 0], fontStyle: 'bold' },
         margin: { left: 110 },
         tableWidth: 86,
       });
@@ -1696,7 +1707,7 @@ export default function ScheduleBatchPage() {
           body: addData,
           theme: 'grid',
           styles: { fontSize: 8, cellPadding: 1, lineColor: [0, 0, 0], lineWidth: 0.1 },
-          headStyles: { fillColor: [240, 240, 240], textColor: [0, 0, 0], fontStyle: 'bold' },
+          headStyles: { textColor: [0, 0, 0], fontStyle: 'bold' },
           margin: { left: 14 },
           tableWidth: 86,
         });
@@ -1771,8 +1782,7 @@ export default function ScheduleBatchPage() {
                       <div>
                         <div className="flex justify-between items-center mb-1">
                           <label className="text-xs text-[var(--text-secondary)]">
-                            Actual Quantity (kg) 
-                            {/* <span className="text-red-500">*</span> */}
+                            Produced Quantity (kg) <span className="text-red-500">*</span>
                           </label>
                           <span className="text-[10px] text-[var(--text-tertiary)] bg-[var(--surface-muted)] px-1 rounded">
                             Planned: {plannedQuantityRef}
@@ -1813,28 +1823,6 @@ export default function ScheduleBatchPage() {
                       <div>
                         <div className="flex justify-between items-center mb-1">
                           <label className="text-xs text-[var(--text-secondary)]">
-                            Actual Water % 
-                            {/* <span className="text-red-500">*</span> */}
-                          </label>
-                          <span className="text-[10px] text-[var(--text-tertiary)] bg-[var(--surface-muted)] px-1 rounded">
-                            Calculated: {plannedWaterPercentageRef}
-                          </span>
-                        </div>
-                        <input
-                          type="number"
-                          step="0.01"
-                          value={actualWaterPercentage}
-                          onChange={e => {
-                            const val = e.target.value;
-                            setActualWaterPercentage(val === '' ? '' : parseFloat(val));
-                          }}
-                          className="w-full px-3 py-2 rounded border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)]"
-                          // required
-                        />
-                      </div>
-                      <div>
-                        <div className="flex justify-between items-center mb-1">
-                          <label className="text-xs text-[var(--text-secondary)]">
                             Actual Viscosity <span className="text-red-500">*</span>
                           </label>
                           <span className="text-[10px] text-[var(--text-tertiary)] bg-[var(--surface-muted)] px-1 rounded">
@@ -1848,6 +1836,27 @@ export default function ScheduleBatchPage() {
                           onChange={e => {
                             const val = e.target.value;
                             setActualViscosity(val === '' ? '' : parseFloat(val));
+                          }}
+                          className="w-full px-3 py-2 rounded border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)]"
+                          required
+                        />
+                      </div>
+                      <div>
+                        <div className="flex justify-between items-center mb-1">
+                          <label className="text-xs text-[var(--text-secondary)]">
+                            Actual Water Percentage
+                          </label>
+                          <span className="text-[10px] text-[var(--text-tertiary)] bg-[var(--surface-muted)] px-1 rounded">
+                            Calculated: {plannedWaterPercentageRef}%
+                          </span>
+                        </div>
+                        <input
+                          type="number"
+                          step="0.001"
+                          value={actualWaterPercentage}
+                          onChange={e => {
+                            const val = e.target.value;
+                            setActualWaterPercentage(val === '' ? '' : parseFloat(val));
                           }}
                           className="w-full px-3 py-2 rounded border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)]"
                           required
@@ -1922,12 +1931,20 @@ export default function ScheduleBatchPage() {
                         </thead>
                         <tbody className="divide-y divide-[var(--border)]/50">
                           {/* Planned Materials */}
-                          {actualMaterials.map(mat => (
+                          {actualMaterials
+                            .sort((a, b) => {
+                              const aIsWater = a.materialName.toLowerCase().includes('water');
+                              const bIsWater = b.materialName.toLowerCase().includes('water');
+                              if (aIsWater && !bIsWater) return 1;
+                              if (!aIsWater && bIsWater) return -1;
+                              return 0;
+                            })
+                            .map(mat => (
                             <tr key={mat.batchMaterialId}>
-                              <td className="py-2 px-3 text-[var(--text-primary)]">
+                              <td className={`py-2 px-3 text-[var(--text-primary)] ${mat.materialName.toLowerCase().includes('water') ? 'font-bold' : ''}`}>
                                 {mat.materialName}
                               </td>
-                              <td className="py-2 px-3 text-right text-[var(--text-secondary)]">
+                              <td className={`py-2 px-3 text-right text-[var(--text-secondary)] ${mat.materialName.toLowerCase().includes('water') ? 'font-bold' : ''}`}>
                                 {mat.plannedQuantity.toFixed(3)}
                               </td>
                             </tr>
@@ -2236,6 +2253,26 @@ export default function ScheduleBatchPage() {
                       </div>
                     </div>
 
+                    {/* Water Percentage from Product Development */}
+                    {masterProductId > 0 && pdWaterPercentage > 0 && (
+                      <div>
+                        <label className="block text-sm font-medium text-[var(--text-secondary)] mb-2">
+                          Water Percentage (from Product Development)
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <div className="w-5 h-5 text-[var(--text-tertiary)] flex items-center justify-center">
+                            💧
+                          </div>
+                          <input
+                            type="text"
+                            value={`${pdWaterPercentage}%`}
+                            readOnly
+                            className="flex-1 px-4 py-2 border border-[var(--border)] bg-[var(--surface-muted)] text-[var(--text-secondary)] rounded-lg cursor-not-allowed"
+                          />
+                        </div>
+                      </div>
+                    )}
+
                     {/* Supervisor */}
                     <div>
                       <label className="block text-sm font-medium text-[var(--text-secondary)] mb-2">
@@ -2347,7 +2384,7 @@ export default function ScheduleBatchPage() {
                                   </td>
                                   <td className="px-4 py-3 text-sm text-[var(--text-primary)] font-medium">
                                     {material.isWater
-                                      ? '-'
+                                      ? `${material.waterPercent}%`
                                       : `${Number(material.percentage).toFixed(2)}%`}
                                   </td>
                                   <td
