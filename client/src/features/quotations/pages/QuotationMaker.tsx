@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { Download, Plus, Trash2, ArrowLeft, FileText } from 'lucide-react';
+import { Download, Plus, Trash2, ArrowLeft, FileText, CheckCircle, RotateCcw, Maximize2, Minimize2, ShoppingCart, Eye, Edit, X } from 'lucide-react';
 import { toPng } from 'html-to-image';
 import jsPDF from 'jspdf';
 import { ColumnDef } from '@tanstack/react-table';
@@ -11,16 +11,26 @@ import { numberToWords } from '@/utils/formatters';
 import { QuotationData, QuotationItem } from '../types';
 import { productApi } from '@/features/master-products/api/productApi';
 
-import { Product } from '@/features/master-products/types';
+import { Product } from '@/features/inventory/types';
 
 import { tncApi } from '@/features/tnc/api/tncApi';
 import { Tnc } from '@/features/tnc/types';
 
 import SearchableSelect from '@/components/ui/SearchableSelect';
-import { Input } from '@/components/ui/Input';
+import { Input, Select, Modal } from '@/components/ui';
 import { Button } from '@/components/ui/Button';
-import { DataTable } from '@/components/ui/data-table/DataTable';
-import { quotationApi } from '../api/quotationApi';
+import { DataTable, DataTableColumnHeader } from '@/components/ui/data-table';
+import { Badge } from '@/components/ui/badge';
+import { format } from 'date-fns';
+import { quotationApi, QuotationRecord } from '../api/quotationApi';
+
+// Additional imports for Create Quotation functionality
+import { customerApi } from '@/features/masters/api/customerApi';
+import { employeeApi } from '@/features/employees/api/employeeApi';
+import { inventoryApi } from '@/features/inventory/api/inventoryApi';
+import { Customer } from '@/features/masters/types';
+import { Employee } from '@/features/employees/types';
+import UpdateConfirmModal from '@/features/orders/components/UpdateConfirmModal';
 
 import { Save } from 'lucide-react';
 
@@ -140,23 +150,28 @@ const QuotationMaker = () => {
   const [mode, setMode] = useState<'form' | 'preview'>('form');
   const [data, setData] = useState<QuotationData>(INITIAL_DATA);
   const [products, setProducts] = useState<Product[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [salesPersonEmployees, setSalesPersonEmployees] = useState<Employee[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [dataLoading, setDataLoading] = useState(true);
 
   const [tncList, setTncList] = useState<Tnc[]>([]);
   const [selectedTermType, setSelectedTermType] = useState<string>('');
 
-  // TnC API removed - not needed for view/download only mode
-  // useEffect(() => {
-  //   const fetchTnc = async () => {
-  //     try {
-  //       const res = await tncApi.getAllTnc();
-  //       if (res.data) setTncList(res.data);
-  //       else setTncList((res as unknown as Tnc[]) || []);
-  //     } catch (err) {
-  //       console.error(err);
-  //     }
-  //   };
-  //   fetchTnc();
-  // }, []);
+  // Fetch TNC data for quotation terms
+  useEffect(() => {
+    const fetchTnc = async () => {
+      try {
+        const res = await tncApi.getAllTnc();
+        if (res.data) setTncList(res.data);
+        else setTncList((res as unknown as Tnc[]) || []);
+      } catch (err) {
+        console.error(err);
+      }
+    };
+    fetchTnc();
+  }, []);
 
   const tncTypes = useMemo(() => {
     return Array.from(new Set(tncList.map(t => t.type || 'General'))).sort();
@@ -171,6 +186,13 @@ const QuotationMaker = () => {
   const [shouldAutoClose, setShouldAutoClose] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [editQuotationId, setEditQuotationId] = useState<number | null>(null);
+
+  // Quotation Modal State
+  const [showQuotationModal, setShowQuotationModal] = useState(false);
+  const [quotationAddress, setQuotationAddress] = useState('');
+  const [selectedPaymentTerms, setSelectedPaymentTerms] = useState('');
+  const [selectedDeliveryTerms, setSelectedDeliveryTerms] = useState('');
+  const [quotationLoading, setQuotationLoading] = useState(false);
   const location = useLocation();
   const { user } = useAuth();
   const isAdmin = user?.Role
@@ -271,11 +293,31 @@ const QuotationMaker = () => {
     }
   }, [autoDownloadPending, mode, isGenerating, shouldAutoClose]);
 
-  // Products & Quotations API removed - not needed for view/download only mode
-  // useEffect(() => {
-  //   fetchProducts();
-  //   fetchQuotations();
-  // }, []);
+  // Fetch data on component mount
+  useEffect(() => {
+    const fetchData = async () => {
+      setDataLoading(true);
+      try {
+        const [customersRes, employeesRes, productsRes] = await Promise.all([
+          customerApi.getAll(),
+          employeeApi.getAll(),
+          inventoryApi.getAllProducts(),
+        ]);
+
+        setCustomers(customersRes.data || []);
+        setEmployees(employeesRes.data || []);
+        setSalesPersonEmployees(employeesRes.data || []);
+        setProducts(productsRes || []);
+      } catch (error) {
+        console.error('Failed to fetch data:', error);
+        showToast.error('Failed to load data');
+      } finally {
+        setDataLoading(false);
+      }
+    };
+
+    fetchData();
+  }, []);
 
   // Auto-sync rates from product master when products are loaded (especially useful for edit mode)
   useEffect(() => {
@@ -288,11 +330,11 @@ const QuotationMaker = () => {
           ...prev,
           items: prev.items.map(item => {
             if (item.description && item.rate === 0) {
-              const product = products.find(p => p.ProductName === item.description);
+              const product = products.find(p => p.productName === item.description);
               if (product) {
                 return {
                   ...item,
-                  rate: product.SellingPrice || item.rate,
+                  rate: product.sellingPrice || item.rate,
                 };
               }
             }
@@ -313,28 +355,42 @@ const QuotationMaker = () => {
   //   }
   // };
 
-  // Removed - not needed for view/download only mode
-  // const handleSaveQuotation = async () => {
-  //   try {
-  //     if (isEditMode && editQuotationId) {
-  //       showToast.loading('Updating Quotation...');
-  //       await quotationApi.update(editQuotationId, data);
-  //       showToast.success('Quotation Updated & Resubmitted for Approval');
-  //       setData(prev => ({ ...prev, status: 'Pending' }));
-  //       setIsEditMode(false);
-  //       setEditQuotationId(null);
-  //     } else {
-  //       showToast.loading('Saving Quotation...');
-  //       await quotationApi.create(data);
-  //       showToast.success(isAdmin ? 'Quotation Saved' : 'Quotation Sent for Approval');
-  //       setData(prev => ({ ...prev, status: 'Pending' }));
-  //     }
-  //     fetchQuotations();
-  //   } catch (error) {
-  //     console.error(error);
-  //     showToast.error('Failed to save quotation');
-  //   }
-  // };
+  // Fetch quotations (used to refresh list after save)
+  const fetchQuotations = async () => {
+    try {
+      const res = await quotationApi.getAll();
+      setQuotationsList(res.data.data || []);
+    } catch (err) {
+      console.error('Failed to fetch quotations:', err);
+    }
+  };
+
+  const handleSaveQuotation = async () => {
+    try {
+      setQuotationLoading(true);
+      showToast.loading(isEditMode ? 'Updating Quotation...' : 'Saving Quotation...', 'quotation-save');
+
+      if (isEditMode && editQuotationId) {
+        await quotationApi.update(editQuotationId, data);
+        showToast.success('Quotation Updated & Resubmitted for Approval', 'quotation-save');
+        setData(prev => ({ ...prev, status: 'Pending' }));
+        setIsEditMode(false);
+        setEditQuotationId(null);
+      } else {
+        await quotationApi.create(data);
+        showToast.success(isAdmin ? 'Quotation Saved' : 'Quotation Sent for Approval', 'quotation-save');
+        setData(prev => ({ ...prev, status: 'Pending' }));
+      }
+
+      // Refresh local list if needed
+      await fetchQuotations();
+    } catch (error) {
+      console.error(error);
+      showToast.error('Failed to save quotation', 'quotation-save');
+    } finally {
+      setQuotationLoading(false);
+    }
+  };
 
   // Removed - not needed for view/download only mode
   // const fetchProducts = async () => {
@@ -480,7 +536,7 @@ const QuotationMaker = () => {
   const handleProductSelectReal = useCallback(
     (id: number, productName: string) => {
       if (!productName) return;
-      const product = products.find(p => p.ProductName === productName);
+      const product = products.find(p => p.productName === productName);
 
       setData(prev => ({
         ...prev,
@@ -489,7 +545,7 @@ const QuotationMaker = () => {
             return {
               ...item,
               description: productName,
-              rate: product?.SellingPrice || item.rate,
+              rate: product?.sellingPrice || item.rate,
               cgstRate: 9,
               sgstRate: 9,
             };
@@ -541,11 +597,11 @@ const QuotationMaker = () => {
   const productOptions = useMemo(
     () =>
       products.map(p => {
-        const label = p.ProductName || (p as any).productName || '';
-        const price = p.SellingPrice || (p as any).sellingPrice || 0;
+        const label = p.productName || '';
+        const price = p.sellingPrice || 0;
 
         return {
-          id: p.ProductID,
+          id: p.productId,
           label,
           value: label,
           subLabel: `₹${price}`,
@@ -716,10 +772,16 @@ const QuotationMaker = () => {
                 </p>
               </div>
               <div className="flex gap-2 flex-shrink-0">
-                {/* Save Draft button removed - view/download only mode */}
+                <Button
+                  onClick={handleSaveQuotation}
+                  disabled={quotationLoading || isGenerating}
+                  className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white shadow-sm flex items-center"
+                >
+                  <Save className="mr-2 h-4 w-4" /> {isEditMode ? 'Update & Resubmit' : 'Save & Send'}
+                </Button>
                 <Button
                   onClick={() => setMode('preview')}
-                  className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white shadow-sm"
+                  className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white shadow-sm flex items-center"
                 >
                   <FileText className="mr-2 h-4 w-4" /> Preview
                 </Button>
@@ -727,122 +789,168 @@ const QuotationMaker = () => {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Seller Details */}
-            <div className="bg-[var(--surface)] p-6 rounded-xl shadow-sm border border-[var(--border)] space-y-4">
-              <h2 className="text-xl font-semibold border-b border-[var(--border)] pb-2 text-[var(--text-primary)]">
-                Seller Details (Your Company)
-              </h2>
-              <div>
-                <label className="block text-sm font-medium text-[var(--text-secondary)]">
-                  Company Name
-                </label>
-                <Input
-                  value={data.companyName}
-                  onChange={e => updateField('companyName', e.target.value)}
-                  className="mt-1"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-[var(--text-secondary)]">
-                  Address
-                </label>
-                <textarea
-                  value={data.companyAddress}
-                  onChange={e => updateField('companyAddress', e.target.value)}
-                  rows={3}
-                  className="w-full mt-1 px-3 py-2 border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-[var(--text-secondary)]">
-                    GSTIN
-                  </label>
-                  <Input
-                    value={data.companyGSTIN}
-                    onChange={e => updateField('companyGSTIN', e.target.value)}
-                    className="mt-1"
-                  />
+          {/* Horizontal Layout: Company Info (Left - Narrower) + Quotation Items (Right - Wider) */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* LEFT SIDE: Company Information - Takes 1 column */}
+            <div className="bg-[var(--surface)] p-6 rounded-lg h-fit lg:sticky lg:top-4 lg:col-span-1">
+              <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-4">
+                Company Information
+              </h3>
+
+              <div className="space-y-4">
+                {/* Company Name and Address - Stacked */}
+                <div className="space-y-4">
+                  {/* Company Name */}
+                  <div>
+                    <label className="block text-sm font-medium text-[var(--text-primary)] mb-2">
+                      Company Name
+                    </label>
+                    <Input
+                      value={data.companyName}
+                      onChange={e => updateField('companyName', e.target.value)}
+                    />
+                  </div>
+
+                  {/* Address */}
+                  <div>
+                    <label className="block text-sm font-medium text-[var(--text-primary)] mb-2">
+                      Address
+                    </label>
+                    <textarea
+                      value={data.companyAddress}
+                      onChange={e => updateField('companyAddress', e.target.value)}
+                      rows={3}
+                      className="w-full px-3 py-2 border border-[var(--border)] bg-[var(--surface-secondary)] text-[var(--text-primary)] rounded-lg focus:outline-none focus:border-[var(--primary)] resize-none"
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-[var(--text-secondary)]">
-                    Email
-                  </label>
-                  <Input
-                    value={data.companyEmail}
-                    onChange={e => updateField('companyEmail', e.target.value)}
-                    className="mt-1"
-                  />
+
+                {/* GSTIN and Email */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-[var(--text-primary)] mb-2">
+                      GSTIN
+                    </label>
+                    <Input
+                      value={data.companyGSTIN}
+                      onChange={e => updateField('companyGSTIN', e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-[var(--text-primary)] mb-2">
+                      Email
+                    </label>
+                    <Input
+                      value={data.companyEmail}
+                      onChange={e => updateField('companyEmail', e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                {/* Quotation Metadata - Full Width Below */}
+                <div className="border-t border-[var(--border)] pt-4">
+                  <h4 className="text-md font-semibold text-[var(--text-primary)] mb-4">
+                    Quotation Details
+                  </h4>
+
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-[var(--text-primary)] mb-2">
+                          Quotation No
+                        </label>
+                        <Input
+                          value={data.quotationNo}
+                          onChange={e => updateField('quotationNo', e.target.value)}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-[var(--text-primary)] mb-2">
+                          Date
+                        </label>
+                        <Input
+                          value={data.date}
+                          onChange={e => updateField('date', e.target.value)}
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-[var(--text-primary)] mb-2">
+                        Payment Terms
+                      </label>
+                      <Input
+                        value={data.paymentTerms}
+                        onChange={e => updateField('paymentTerms', e.target.value)}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-[var(--text-primary)] mb-2">
+                        Buyer Ref / Order No
+                      </label>
+                      <Input
+                        value={data.buyerRef}
+                        onChange={e => updateField('buyerRef', e.target.value)}
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-[var(--text-primary)] mb-2">
+                          Dispatch Through
+                        </label>
+                        <Input
+                          value={data.dispatchThrough}
+                          onChange={e => updateField('dispatchThrough', e.target.value)}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-[var(--text-primary)] mb-2">
+                          Destination
+                        </label>
+                        <Input
+                          value={data.destination}
+                          onChange={e => updateField('destination', e.target.value)}
+                        />
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
 
-            {/* Quote details ... */}
-            <div className="bg-[var(--surface)] p-6 rounded-lg shadow-sm border border-[var(--border)] space-y-4">
-              <h2 className="text-xl font-semibold border-b border-[var(--border)] pb-2 text-[var(--text-primary)]">
-                Quotation Metadata
-              </h2>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-[var(--text-secondary)]">
-                    Quotation No
-                  </label>
-                  <Input
-                    value={data.quotationNo}
-                    onChange={e => updateField('quotationNo', e.target.value)}
-                    className="mt-1"
+            {/* RIGHT SIDE: Quotation Items - Takes 2 columns */}
+            <div className="bg-[var(--surface)] p-6 rounded-lg flex flex-col transition-all duration-300 lg:col-span-2">
+              <div>
+                <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-4">
+                  Quotation Items
+                </h3>
+                <p className="text-xs text-[var(--text-secondary)] mb-4">
+                  {data.items.length} item{data.items.length !== 1 ? 's' : ''} in quotation
+                </p>
+              </div>
+
+              {/* Items Table */}
+              <div className="flex-1 overflow-y-auto pr-2" style={{ maxHeight: 'calc(100vh - 300px)' }}>
+                <div className="border border-[var(--border)] rounded-lg overflow-hidden">
+                  <DataTable
+                    columns={columns}
+                    data={data.items}
+                    searchPlaceholder="Search items..."
                   />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-[var(--text-secondary)]">
-                    Date
-                  </label>
-                  <Input
-                    value={data.date}
-                    onChange={e => updateField('date', e.target.value)}
-                    className="mt-1"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-[var(--text-secondary)]">
-                    Payment Terms
-                  </label>
-                  <Input
-                    value={data.paymentTerms}
-                    onChange={e => updateField('paymentTerms', e.target.value)}
-                    className="mt-1"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-[var(--text-secondary)]">
-                    Buyer Ref / Order No
-                  </label>
-                  <Input
-                    value={data.buyerRef}
-                    onChange={e => updateField('buyerRef', e.target.value)}
-                    className="mt-1"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-[var(--text-secondary)]">
-                    Dispatch Through
-                  </label>
-                  <Input
-                    value={data.dispatchThrough}
-                    onChange={e => updateField('dispatchThrough', e.target.value)}
-                    className="mt-1"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-[var(--text-secondary)]">
-                    Destination
-                  </label>
-                  <Input
-                    value={data.destination}
-                    onChange={e => updateField('destination', e.target.value)}
-                    className="mt-1"
-                  />
+
+                {/* Add Item Button */}
+                <div className="mt-4">
+                  <Button
+                    variant="secondary"
+                    onClick={addItem}
+                    leftIcon={<Plus size={18} />}
+                    className="w-full border-2 border-dashed border-[var(--primary)] bg-[var(--primary)]/5 hover:bg-[var(--primary)]/10"
+                  >
+                    Add Item
+                  </Button>
                 </div>
               </div>
             </div>

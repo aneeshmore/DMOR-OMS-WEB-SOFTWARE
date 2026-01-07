@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Eye,
   Check,
@@ -35,6 +36,7 @@ interface Product {
 
 const QuotationMasterPage: React.FC = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const isAdmin = user?.Role
     ? ['Admin', 'SuperAdmin', 'Accounts Manager'].includes(user.Role)
     : false;
@@ -192,6 +194,19 @@ const QuotationMasterPage: React.FC = () => {
     }
   }, []);
 
+  // Handle Edit - Navigate to QuotationMaker with edit mode
+  const handleEdit = useCallback((quotation: QuotationRecord) => {
+    // Navigate to quotation maker with edit mode and pass quotation data
+    navigate('/quotation-maker', {
+      state: {
+        importedData: quotation.content,
+        editMode: true,
+        quotationId: quotation.quotationId,
+        startInPreview: false
+      }
+    });
+  }, [navigate]);
+
   // Table Columns
   const columns: ColumnDef<QuotationRecord>[] = useMemo(
     () => [
@@ -312,6 +327,10 @@ const QuotationMasterPage: React.FC = () => {
           const isPending = quotation.status === 'Pending';
           const isApproved = quotation.status === 'Approved';
           const isConverted = quotation.status === 'Converted';
+          const isRejected = quotation.status === 'Rejected';
+
+          // Check if user can edit this quotation (owner or admin)
+          const canEdit = isPending && (isAdmin || quotation.createdBy === user?.EmployeeID);
 
           return (
             <div className="flex flex-col gap-1.5">
@@ -326,6 +345,20 @@ const QuotationMasterPage: React.FC = () => {
                 <Eye size={14} className="mr-1.5" />
                 View
               </Button>
+
+              {/* Edit Button for Pending Quotations */}
+              {canEdit && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => handleEdit(quotation)}
+                  title="Edit Quotation"
+                  className="text-blue-600 hover:bg-blue-50 justify-start h-7"
+                >
+                  <FileText size={14} className="mr-1.5" />
+                  Edit
+                </Button>
+              )}
 
               {/* Admin Actions for Pending */}
               {isPending && isAdmin && (

@@ -59,8 +59,8 @@ export class QuotationsService {
       throw new Error('Access denied: You can only update your own quotations');
     }
 
-    if (existing.status !== 'Rejected') {
-      throw new Error('Only rejected quotations can be updated');
+    if (existing.status !== 'Rejected' && existing.status !== 'Pending') {
+      throw new Error('Only rejected or pending quotations can be updated');
     }
 
     return await this.repository.update(id, {
