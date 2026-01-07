@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button, Input, SearchableSelect } from '@/components/ui';
-import Toggle from '@/components/ui/Toggle';
 import { PageHeader } from '@/components/common';
 import { masterProductApi } from '@/features/master-products/api';
 import { MasterProduct } from '@/features/master-products/types';
@@ -98,12 +97,11 @@ const DoubleProductDevelopment = () => {
   const [selectedRmId, setSelectedRmId] = useState<number | ''>('');
   const [baseItems, setBaseItems] = useState<RawMaterialItem[]>([]);
   const [hardenerItems, setHardenerItems] = useState<RawMaterialItem[]>([]);
-  const [isAddToHardener, setIsAddToHardener] = useState(false);
-  const addButtonRef = useRef<HTMLButtonElement>(null);
 
   /**
    * Handle Enter key press to navigate to the next row's input in the same column
    * Uses isHardener flag to differentiate between Base and Hardener tables
+   * Also disables arrow key navigation
    */
   const handleInputKeyDown = (
     e: React.KeyboardEvent<HTMLInputElement>,
@@ -125,6 +123,8 @@ const DoubleProductDevelopment = () => {
           nextInput.select();
         }
       }
+    } else if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+      e.preventDefault();
     }
   };
 
@@ -305,13 +305,14 @@ const DoubleProductDevelopment = () => {
     }
   };
 
-  const handleAddItem = (isHardener: boolean) => {
-    if (!selectedRmId) {
+  const handleAddItem = (isHardener: boolean, rmId?: number | '') => {
+    const currentRmId = rmId !== undefined ? rmId : selectedRmId;
+    if (!currentRmId) {
       showToast.error('Please select a raw material first');
       return;
     }
 
-    const productToAdd = rmMasterProducts.find(p => p.masterProductId === selectedRmId);
+    const productToAdd = rmMasterProducts.find(p => p.masterProductId === currentRmId);
     if (!productToAdd) {
       showToast.error('Product not found');
       return;
@@ -964,15 +965,18 @@ const DoubleProductDevelopment = () => {
                           onChange={e =>
                             handleUpdateItem(item.id, 'totalPercentage', e.target.value, isHardener)
                           }
-                          onKeyDown={e =>
+                          onKeyDown={e => {
                             handleInputKeyDown(
                               e,
                               items.indexOf(item),
                               'totalPercentage',
                               isHardener,
                               items
-                            )
-                          }
+                            );
+                            if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+                              e.preventDefault();
+                            }
+                          }}
                           data-table={isHardener ? 'hardener' : 'base'}
                           data-row-index={items.indexOf(item)}
                           data-column="totalPercentage"
@@ -992,15 +996,18 @@ const DoubleProductDevelopment = () => {
                           onChange={e =>
                             handleUpdateItem(item.id, 'percentage', e.target.value, isHardener)
                           }
-                          onKeyDown={e =>
+                          onKeyDown={e => {
                             handleInputKeyDown(
                               e,
                               items.indexOf(item),
                               'percentage',
                               isHardener,
                               items
-                            )
-                          }
+                            );
+                            if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+                              e.preventDefault();
+                            }
+                          }}
                           data-table={isHardener ? 'hardener' : 'base'}
                           data-row-index={items.indexOf(item)}
                           data-column="percentage"
@@ -1028,15 +1035,18 @@ const DoubleProductDevelopment = () => {
                           onChange={e =>
                             handleUpdateItem(item.id, 'sequence', e.target.value, isHardener)
                           }
-                          onKeyDown={e =>
+                          onKeyDown={e => {
                             handleInputKeyDown(
                               e,
                               items.indexOf(item),
                               'sequence',
                               isHardener,
                               items
-                            )
-                          }
+                            );
+                            if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+                              e.preventDefault();
+                            }
+                          }}
                           data-table={isHardener ? 'hardener' : 'base'}
                           data-row-index={items.indexOf(item)}
                           data-column="sequence"
@@ -1050,15 +1060,18 @@ const DoubleProductDevelopment = () => {
                           onChange={e =>
                             handleUpdateItem(item.id, 'waitingTime', e.target.value, isHardener)
                           }
-                          onKeyDown={e =>
+                          onKeyDown={e => {
                             handleInputKeyDown(
                               e,
                               items.indexOf(item),
                               'waitingTime',
                               isHardener,
                               items
-                            )
-                          }
+                            );
+                            if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+                              e.preventDefault();
+                            }
+                          }}
                           data-table={isHardener ? 'hardener' : 'base'}
                           data-row-index={items.indexOf(item)}
                           data-column="waitingTime"
@@ -1319,6 +1332,11 @@ const DoubleProductDevelopment = () => {
               <Input
                 value={ratioBase}
                 onChange={e => setRatioBase(e.target.value)}
+                onKeyDown={(e) => {
+                  if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+                    e.preventDefault();
+                  }
+                }}
                 placeholder="Base"
                 className="w-20 text-center"
               />
@@ -1326,6 +1344,11 @@ const DoubleProductDevelopment = () => {
               <Input
                 value={ratioHardener}
                 onChange={e => setRatioHardener(e.target.value)}
+                onKeyDown={(e) => {
+                  if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+                    e.preventDefault();
+                  }
+                }}
                 placeholder="Hardener"
                 className="w-20 text-center"
               />
@@ -1344,26 +1367,30 @@ const DoubleProductDevelopment = () => {
             <SearchableSelect
               options={rmProductOptions}
               value={selectedRmId}
-              onChange={val => setSelectedRmId(val ?? '')}
+              onChange={val => {
+                setSelectedRmId(val ?? '');
+                if (val) {
+                  handleAddItem(false, val);
+                  setSelectedRmId('');
+                }
+              }}
               placeholder="Search RM..."
               className="w-full"
-              onEnter={() => addButtonRef.current?.click()}
+              onEnter={() => {
+                handleAddItem(false);
+                setSelectedRmId('');
+              }}
             />
           </div>
           <div className="flex flex-col gap-2 items-end">
-            <Toggle
-              checked={isAddToHardener}
-              onChange={setIsAddToHardener}
-              disabled={!selectedRmId}
-            />
             <Button
-              variant={isAddToHardener ? "secondary" : "primary"}
-              onClick={() => handleAddItem(isAddToHardener)}
-              disabled={!selectedRmId || (isAddToHardener && !linkedHardenerId)}
+              variant="primary"
+              onClick={() => handleAddItem(false)}
+              disabled={!selectedRmId}
               leftIcon={<Plus size={16} />}
               className="min-w-[160px]"
             >
-              Add to {isAddToHardener ? 'Hardener' : 'Base'}
+              Add to Base
             </Button>
           </div>
         </div>
