@@ -177,7 +177,7 @@ export const InwardForm = React.forwardRef<HTMLFormElement, InwardFormProps>(
     const handleItemChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
       const { name, value } = e.target;
       setCurrentItem(prev => {
-        const updated = { ...prev, [name]: value };
+        const updated = { ...prev, [name]: name === 'unitId' ? Number(value) : value };
 
         if (name === 'quantity' || name === 'totalPrice') {
           const qty = Number(name === 'quantity' ? value : updated.quantity);

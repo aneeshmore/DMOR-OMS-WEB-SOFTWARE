@@ -26,6 +26,7 @@ export interface AdminOrderDetails extends AdminOrder {
     quantity: number;
     unit: string;
     unitPrice: number;
+    discount: number;
     totalPrice: number;
   }>;
 }

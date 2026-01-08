@@ -52,6 +52,7 @@ export class AdminAccountsService {
         quantity: i.detail.quantity,
         unit: i.product.unit,
         unitPrice: parseFloat(i.detail.unitPrice),
+        discount: parseFloat(i.detail.discount || 0),
         totalPrice: parseFloat(i.detail.totalPrice),
       })),
     };

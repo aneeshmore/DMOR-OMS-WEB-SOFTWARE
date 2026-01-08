@@ -148,6 +148,11 @@ const ExpandedOrderDetails = ({ orderId }: { orderId: number }) => {
               <span className="text-[var(--text-secondary)] text-xs ml-2">
                 x {item.quantity} {item.unit}
               </span>
+              {item.discount > 0 && (
+                <span className="text-[var(--warning)] text-xs ml-2">
+                  ({item.discount}% discount)
+                </span>
+              )}
             </div>
             <div className="font-medium text-[var(--text-primary)]">
               ₹{item.totalPrice.toFixed(2)}
