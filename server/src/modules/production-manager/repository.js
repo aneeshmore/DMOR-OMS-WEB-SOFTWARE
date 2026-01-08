@@ -25,7 +25,7 @@ import {
   accounts,
   inventoryTransactions,
 } from '../../db/schema/index.js';
-import { eq, inArray, sql, desc } from 'drizzle-orm';
+import { eq, inArray, sql, desc, asc } from 'drizzle-orm';
 
 export class ProductionManagerRepository {
   // ... (previous methods)
@@ -81,7 +81,8 @@ export class ProductionManagerRepository {
         masterProducts,
         eq(productDevelopmentMaterials.materialId, masterProducts.masterProductId)
       )
-      .where(eq(productDevelopmentMaterials.developmentId, developmentId));
+      .where(eq(productDevelopmentMaterials.developmentId, developmentId))
+      .orderBy(asc(productDevelopmentMaterials.sequence));
 
     // 4. Calculate requirements and check stock
     const result = [];
