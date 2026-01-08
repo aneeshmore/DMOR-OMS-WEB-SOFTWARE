@@ -59,8 +59,8 @@ export class QuotationsService {
       throw new Error('Access denied: You can only update your own quotations');
     }
 
-    if (existing.status !== 'Rejected' && existing.status !== 'Pending') {
-      throw new Error('Only rejected or pending quotations can be updated');
+    if (existing.status !== 'Rejected' && existing.status !== 'Pending' && existing.status !== 'Approved') {
+      throw new Error('Only rejected, pending, or approved quotations can be updated');
     }
 
     return await this.repository.update(id, {
@@ -70,6 +70,7 @@ export class QuotationsService {
       buyerName: data.buyerName || existing.buyerName,
       customerId: data.customerId || existing.customerId,
       content: data.content || data,
+      status: 'Pending', // Reset status to Pending when updated for re-approval
     });
   }
 

@@ -1089,6 +1089,7 @@ const CreateOrderForm: React.FC<CreateOrderFormProps> = ({ onSuccess, viewMode =
         paymentTerms: selectedPaymentTerms,
         deliveryTerms: selectedDeliveryTerms,
         remarks: remarks,
+        status: 'Pending', // Reset status to Pending when updated
         items: validDetails.map((item, index) => ({
           id: index + 1,
           description: getProductName(item.productId),
@@ -1305,24 +1306,17 @@ const CreateOrderForm: React.FC<CreateOrderFormProps> = ({ onSuccess, viewMode =
                 </Button>
               )}
 
-              {/* Pending Status */}
-              {isPending && (
-                <span className="text-xs text-orange-600 font-medium bg-orange-50 px-2 py-1 rounded">
-                  Awaiting Approval
-                </span>
-              )}
-
-              {/* Edit/Resubmit Button for Rejected Quotations */}
-              {isRejected && (
+              {/* Edit Button for Approved Quotations */}
+              {isApproved && (
                 <Button
                   variant="secondary"
                   size="sm"
                   onClick={() => handleLoadQuotationForEdit(quotation)}
-                  title="Edit and Resubmit"
+                  title="Edit Approved Quotation"
                   className="bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100 justify-start h-7"
                 >
                   <Edit size={14} className="mr-1.5" />
-                  Update
+                  Edit
                 </Button>
               )}
             </div>

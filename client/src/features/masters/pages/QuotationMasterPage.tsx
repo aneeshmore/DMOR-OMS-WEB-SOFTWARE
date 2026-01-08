@@ -11,6 +11,7 @@ import {
   XCircle,
   RefreshCw,
   FileText,
+  Edit,
 } from 'lucide-react';
 import { ColumnDef } from '@tanstack/react-table';
 import { format } from 'date-fns';
@@ -194,17 +195,9 @@ const QuotationMasterPage: React.FC = () => {
     }
   }, []);
 
-  // Handle Edit - Navigate to QuotationMaker with edit mode
+  // Handle Edit - Navigate to edit page
   const handleEdit = useCallback((quotation: QuotationRecord) => {
-    // Navigate to quotation maker with edit mode and pass quotation data
-    navigate('/quotation-maker', {
-      state: {
-        importedData: quotation.content,
-        editMode: true,
-        quotationId: quotation.quotationId,
-        startInPreview: false
-      }
-    });
+    navigate(`/quotations/edit/${quotation.quotationId}`);
   }, [navigate]);
 
   // Table Columns
@@ -329,9 +322,6 @@ const QuotationMasterPage: React.FC = () => {
           const isConverted = quotation.status === 'Converted';
           const isRejected = quotation.status === 'Rejected';
 
-          // Check if user can edit this quotation (owner or admin)
-          const canEdit = isPending && (isAdmin || quotation.createdBy === user?.EmployeeID);
-
           return (
             <div className="flex flex-col gap-1.5">
               {/* View Details Button */}
@@ -345,20 +335,6 @@ const QuotationMasterPage: React.FC = () => {
                 <Eye size={14} className="mr-1.5" />
                 View
               </Button>
-
-              {/* Edit Button for Pending Quotations */}
-              {canEdit && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => handleEdit(quotation)}
-                  title="Edit Quotation"
-                  className="text-blue-600 hover:bg-blue-50 justify-start h-7"
-                >
-                  <FileText size={14} className="mr-1.5" />
-                  Edit
-                </Button>
-              )}
 
               {/* Admin Actions for Pending */}
               {isPending && isAdmin && (
@@ -401,12 +377,26 @@ const QuotationMasterPage: React.FC = () => {
                   Download
                 </Button>
               )}
+
+              {/* Edit for Approved - Only for Admin or Creator */}
+              {isApproved && (isAdmin || quotation.createdBy === user?.EmployeeID) && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => handleEdit(quotation)}
+                  title="Edit Quotation"
+                  className="text-orange-600 hover:bg-orange-50 justify-start h-7"
+                >
+                  <Edit size={14} className="mr-1.5" />
+                  Edit
+                </Button>
+              )}
             </div>
           );
         },
       },
     ],
-    [isAdmin, actionLoading, handleView, handleApprove, openRejectModal, handleDownload, quotations]
+    [isAdmin, actionLoading, handleView, handleApprove, openRejectModal, handleDownload, handleEdit, quotations]
   );
 
   return (
