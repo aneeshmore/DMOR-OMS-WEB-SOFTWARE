@@ -184,6 +184,15 @@ export class CancelOrderRepository {
       .where(eq(orders.orderId, orderId))
       .returning();
 
+    // 5. Free up bill number in accounts table if it exists
+    await db
+      .update(accounts)
+      .set({
+        billNo: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(accounts.orderId, orderId));
+
     return result;
   }
 
