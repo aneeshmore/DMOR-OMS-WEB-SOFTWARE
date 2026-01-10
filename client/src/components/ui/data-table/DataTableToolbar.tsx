@@ -53,6 +53,8 @@ export function DataTableToolbar<TData>({
           />
         )}
 
+        {toolbarActions}
+
         {isFiltered && (
           <Button
             variant="ghost"

@@ -32,6 +32,7 @@ import { OrderWithDetails, OrderDetail } from '@/features/orders/types';
 import { DataTable } from '@/components/ui/data-table';
 import { DataTableColumnHeader } from '@/components/ui/data-table/DataTableColumnHeader';
 import { PageHeader } from '@/components/common';
+import { Badge } from '@/components/ui';
 
 interface ProductWithMaster extends OrderDetail {
   masterProductName?: string;
@@ -93,7 +94,9 @@ const SplitOrderPage: React.FC = () => {
   // Fetch pending orders
   const fetchPendingOrders = useCallback(async () => {
     try {
-      const recent = await ordersApi.getAll({ limit: 50, offset: 0, status: 'Pending' });
+      const statuses =
+        'On Hold,Accepted,Confirmed,Scheduled for Production,In Production,Ready for Dispatch,Started';
+      const recent = await ordersApi.getAll({ limit: 50, offset: 0, status: statuses });
       setPendingOrders(recent || []);
     } catch (err) {
       console.error('Failed to load recent orders', err);
@@ -253,6 +256,47 @@ const SplitOrderPage: React.FC = () => {
             {row.getValue('billNo') || '-'}
           </div>
         ),
+      },
+      {
+        accessorKey: 'status',
+        header: ({ column }) => <DataTableColumnHeader column={column} title="Status" />,
+        cell: ({ row }) => {
+          const status = row.getValue('status') as string;
+          let colorClass = 'bg-gray-100 text-gray-800'; // Default
+
+          switch (status) {
+            case 'Pending':
+              colorClass = 'bg-yellow-100 text-yellow-800';
+              break;
+            case 'Accepted':
+              colorClass = 'bg-green-100 text-green-800';
+              break;
+            case 'Confirmed':
+              colorClass = 'bg-blue-100 text-blue-800';
+              break;
+            case 'Scheduled for Production':
+              colorClass = 'bg-purple-100 text-purple-800';
+              break;
+            case 'In Production':
+              colorClass = 'bg-indigo-100 text-indigo-800';
+              break;
+            case 'Ready for Dispatch':
+              colorClass = 'bg-teal-100 text-teal-800';
+              break;
+            case 'Started':
+              colorClass = 'bg-orange-100 text-orange-800';
+              break;
+            case 'On Hold':
+              colorClass = 'bg-red-100 text-red-800';
+              break;
+          }
+
+          return (
+            <Badge className={colorClass} variant="secondary">
+              {status}
+            </Badge>
+          );
+        },
       },
     ],
     []
@@ -585,33 +629,30 @@ const SplitOrderPage: React.FC = () => {
                       <div className="flex items-center gap-1 p-1 bg-[var(--surface-secondary)] rounded-lg">
                         <button
                           onClick={() => setSplitMode('quantity')}
-                          className={`px-3 py-1.5 rounded text-xs font-medium transition-all flex items-center gap-1.5 ${
-                            splitMode === 'quantity'
-                              ? 'bg-[var(--primary)] text-white shadow'
-                              : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
-                          }`}
+                          className={`px-3 py-1.5 rounded text-xs font-medium transition-all flex items-center gap-1.5 ${splitMode === 'quantity'
+                            ? 'bg-[var(--primary)] text-white shadow'
+                            : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                            }`}
                         >
                           <Hash className="w-3 h-3" />
                           By Quantity
                         </button>
                         <button
                           onClick={() => setSplitMode('product')}
-                          className={`px-3 py-1.5 rounded text-xs font-medium transition-all flex items-center gap-1.5 ${
-                            splitMode === 'product'
-                              ? 'bg-[var(--primary)] text-white shadow'
-                              : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
-                          }`}
+                          className={`px-3 py-1.5 rounded text-xs font-medium transition-all flex items-center gap-1.5 ${splitMode === 'product'
+                            ? 'bg-[var(--primary)] text-white shadow'
+                            : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                            }`}
                         >
                           <Package className="w-3 h-3" />
                           By Product
                         </button>
                         <button
                           onClick={() => setSplitMode('preference')}
-                          className={`px-3 py-1.5 rounded text-xs font-medium transition-all flex items-center gap-1.5 ${
-                            splitMode === 'preference'
-                              ? 'bg-[var(--warning)] text-white shadow'
-                              : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
-                          }`}
+                          className={`px-3 py-1.5 rounded text-xs font-medium transition-all flex items-center gap-1.5 ${splitMode === 'preference'
+                            ? 'bg-[var(--warning)] text-white shadow'
+                            : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                            }`}
                           title="Split by your preference - ignores stock availability"
                         >
                           <Zap className="w-3 h-3" />
@@ -652,11 +693,10 @@ const SplitOrderPage: React.FC = () => {
                         >
                           <div className="flex items-center gap-2">
                             <div
-                              className={`p-1.5 rounded ${
-                                group.totalAvailable >= group.totalOrdered
-                                  ? 'bg-[var(--success)]/10 text-[var(--success)]'
-                                  : 'bg-[var(--warning)]/10 text-[var(--warning)]'
-                              }`}
+                              className={`p-1.5 rounded ${group.totalAvailable >= group.totalOrdered
+                                ? 'bg-[var(--success)]/10 text-[var(--success)]'
+                                : 'bg-[var(--warning)]/10 text-[var(--warning)]'
+                                }`}
                             >
                               <Package className="w-4 h-4" />
                             </div>
@@ -687,21 +727,19 @@ const SplitOrderPage: React.FC = () => {
                               >
                                 <button
                                   onClick={() => handleAssignGroupToOrder(group, 1)}
-                                  className={`px-2 py-1 rounded text-xs font-medium transition-all ${
-                                    group.isFullyAssignedToOrder1
-                                      ? 'bg-[var(--success)] text-white'
-                                      : 'bg-[var(--success)]/10 text-[var(--success)] hover:bg-[var(--success)]/20'
-                                  }`}
+                                  className={`px-2 py-1 rounded text-xs font-medium transition-all ${group.isFullyAssignedToOrder1
+                                    ? 'bg-[var(--success)] text-white'
+                                    : 'bg-[var(--success)]/10 text-[var(--success)] hover:bg-[var(--success)]/20'
+                                    }`}
                                 >
                                   <TrendingUp className="w-3 h-3" />
                                 </button>
                                 <button
                                   onClick={() => handleAssignGroupToOrder(group, 2)}
-                                  className={`px-2 py-1 rounded text-xs font-medium transition-all ${
-                                    group.isFullyAssignedToOrder2
-                                      ? 'bg-[var(--warning)] text-white'
-                                      : 'bg-[var(--warning)]/10 text-[var(--warning)] hover:bg-[var(--warning)]/20'
-                                  }`}
+                                  className={`px-2 py-1 rounded text-xs font-medium transition-all ${group.isFullyAssignedToOrder2
+                                    ? 'bg-[var(--warning)] text-white'
+                                    : 'bg-[var(--warning)]/10 text-[var(--warning)] hover:bg-[var(--warning)]/20'
+                                    }`}
                                 >
                                   <Package className="w-3 h-3" />
                                 </button>
@@ -728,11 +766,10 @@ const SplitOrderPage: React.FC = () => {
                               return (
                                 <div
                                   key={product.productId}
-                                  className={`p-3 flex items-center gap-3 ${
-                                    idx !== group.products.length - 1
-                                      ? 'border-b border-[var(--border)]/50'
-                                      : ''
-                                  }`}
+                                  className={`p-3 flex items-center gap-3 ${idx !== group.products.length - 1
+                                    ? 'border-b border-[var(--border)]/50'
+                                    : ''
+                                    }`}
                                 >
                                   {/* Product Info */}
                                   <div className="flex-1 min-w-0">
@@ -786,11 +823,10 @@ const SplitOrderPage: React.FC = () => {
                                               'q1'
                                             )
                                           }
-                                          className={`w-12 px-1.5 py-1 text-center text-sm font-semibold rounded focus:outline-none focus:ring-1 ${
-                                            q1 > product.availableQty
-                                              ? 'bg-[var(--danger)]/10 border border-[var(--danger)]/30 text-[var(--danger)] focus:ring-[var(--danger)]/50'
-                                              : 'bg-[var(--success)]/10 border border-[var(--success)]/30 text-[var(--success)] focus:ring-[var(--success)]/50'
-                                          }`}
+                                          className={`w-12 px-1.5 py-1 text-center text-sm font-semibold rounded focus:outline-none focus:ring-1 ${q1 > product.availableQty
+                                            ? 'bg-[var(--danger)]/10 border border-[var(--danger)]/30 text-[var(--danger)] focus:ring-[var(--danger)]/50'
+                                            : 'bg-[var(--success)]/10 border border-[var(--success)]/30 text-[var(--success)] focus:ring-[var(--success)]/50'
+                                            }`}
                                         />
                                         <button
                                           onClick={() => adjustQty(product.productId, 1)}

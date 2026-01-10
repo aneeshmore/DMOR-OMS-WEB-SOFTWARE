@@ -10,6 +10,11 @@ router.get(
   reportsController.getBatchProductionReport
 );
 router.get(
+  '/daily-consumption',
+  requirePermission('GET:/reports/daily-consumption'),
+  reportsController.getDailyConsumptionReport
+);
+router.get(
   '/material-inward',
   requirePermission('GET:/reports/material-inward'),
   reportsController.getMaterialInwardReport

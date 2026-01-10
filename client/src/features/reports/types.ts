@@ -107,6 +107,15 @@ export interface BatchProductionReportItem {
   productionRemarks?: string | null;
 }
 
+export interface DailyConsumptionReportItem {
+  masterProductId: number;
+  masterProductName: string;
+  productType: string;
+  openingQty: number;
+  consumption: number;
+  closingQty: number;
+}
+
 export interface MaterialInwardReportItem {
   inwardId: number;
   inwardDate: string;

@@ -140,6 +140,7 @@ const MaterialInwardReport = lazy(() => import('@/features/reports/pages/Materia
 const StockReport = lazy(() => import('@/features/reports/pages/StockReport'));
 const LowStockReport = lazy(() => import('@/features/reports/pages/LowStockReport'));
 const ProductWiseReport = lazy(() => import('@/features/reports/pages/ProductWiseReport'));
+const DailyConsumptionReport = lazy(() => import('@/features/reports/pages/DailyConsumptionReport'));
 // Masters
 const MastersDashboard = lazy(() => import('@/features/masters/pages/MastersDashboard'));
 const DepartmentMaster = lazy(() => import('@/features/masters/pages/DepartmentMaster'));
@@ -841,6 +842,21 @@ export const routeRegistry: RouteNode[] = [
         permission: { module: 'report-low-stock' },
         apis: [{ route: '/inventory/products/low-stock', method: 'GET', label: 'View Low Stock' }],
         showInSidebar: false,
+      },
+      {
+        id: 'daily-consumption-report',
+        path: '/reports/daily-consumption',
+        label: 'Daily Consumption',
+        icon: FileText,
+        component: DailyConsumptionReport,
+        permission: { module: 'report-daily-consumption' },
+        apis: [
+          {
+            route: '/reports/daily-consumption',
+            method: 'GET',
+            label: 'View Daily Consumption',
+          },
+        ],
       },
     ],
   },

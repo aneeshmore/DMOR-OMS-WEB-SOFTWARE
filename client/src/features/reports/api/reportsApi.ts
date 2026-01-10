@@ -1,6 +1,7 @@
 import apiClient from '@/api/client';
 import {
   BatchProductionReportItem,
+  DailyConsumptionReportItem,
   MaterialInwardReportItem,
   StockReportItem,
   ProductWiseReportItem,
@@ -24,6 +25,11 @@ export const reportsApi = {
       ? `/reports/batch-production?${queryString}`
       : '/reports/batch-production';
     const response = await apiClient.get(url);
+    return response.data.data;
+  },
+
+  getDailyConsumptionReport: async (date: string): Promise<DailyConsumptionReportItem[]> => {
+    const response = await apiClient.get(`/reports/daily-consumption?date=${date}`);
     return response.data.data;
   },
 

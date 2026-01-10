@@ -15,6 +15,22 @@ export const getBatchProductionReport = async (req, res, next) => {
   }
 };
 
+export const getDailyConsumptionReport = async (req, res, next) => {
+  try {
+    const { date } = req.query;
+    if (!date) {
+      return res.status(400).json({ success: false, message: 'Date is required' });
+    }
+    const data = await reportsService.getDailyConsumptionReport(date);
+    res.status(200).json({
+      success: true,
+      data,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const getMaterialInwardReport = async (req, res, next) => {
   try {
     const { type, startDate, endDate } = req.query;

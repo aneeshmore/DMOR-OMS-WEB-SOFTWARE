@@ -1,4 +1,4 @@
-import { eq, desc, sql, or, and } from 'drizzle-orm';
+import { eq, desc, sql, or, and, inArray } from 'drizzle-orm';
 import db from '../../db/index.js';
 import {
   orders,
@@ -80,7 +80,12 @@ export class OrdersRepository {
 
     // Status filter
     if (status) {
-      conditions.push(eq(orders.status, status));
+      if (status.includes(',')) {
+        const statuses = status.split(',').map(s => s.trim());
+        conditions.push(inArray(orders.status, statuses));
+      } else {
+        conditions.push(eq(orders.status, status));
+      }
     }
 
     // Data scoping: Non-admins only see orders where they are the salesperson

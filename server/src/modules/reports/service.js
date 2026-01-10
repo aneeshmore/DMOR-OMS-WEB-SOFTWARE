@@ -1,4 +1,4 @@
-import { eq, desc, and, gte, lte, inArray, notInArray, sql } from 'drizzle-orm';
+import { eq, desc, and, gte, lte, lt, inArray, notInArray, sql } from 'drizzle-orm';
 import db from '../../db/index.js';
 import {
   materialInward,
@@ -296,6 +296,112 @@ export class ReportsService {
       return batchesWithBom;
     } catch (error) {
       console.error('Error fetching batch production report:', error);
+      throw error;
+    }
+  }
+
+  async getDailyConsumptionReport(date) {
+    try {
+      if (!date) {
+        throw new Error('Date is required');
+      }
+
+      const queryDate = new Date(date);
+      const startOfDay = new Date(queryDate);
+      startOfDay.setHours(0, 0, 0, 0);
+
+      const endOfDay = new Date(queryDate);
+      endOfDay.setHours(23, 59, 59, 999);
+
+      // 1. Fetch all Active RM and PM Master Products
+      const materials = await db
+        .select({
+          masterProductId: masterProducts.masterProductId,
+          masterProductName: masterProducts.masterProductName,
+          productType: masterProducts.productType,
+        })
+        .from(masterProducts)
+        .where(
+          and(
+            inArray(masterProducts.productType, ['RM', 'PM']),
+            eq(masterProducts.isActive, true)
+          )
+        );
+
+      // 2. Calculate Opening Stock for each material (Transactions BEFORE startOfDay)
+      // We need to sum quantity from inventory_transactions
+      // Handle both direct masterProductId reference and indirect via productId
+      const openingStockMap = new Map();
+
+      const openingStockData = await db
+        .select({
+          masterProductId: sql`COALESCE(${inventoryTransactions.masterProductId}, ${products.masterProductId})`,
+          totalQty: sql`SUM(${inventoryTransactions.quantity})`,
+        })
+        .from(inventoryTransactions)
+        .leftJoin(products, eq(inventoryTransactions.productId, products.productId))
+        .where(
+          and(
+            lt(inventoryTransactions.createdAt, startOfDay)
+          )
+        )
+        .groupBy(sql`COALESCE(${inventoryTransactions.masterProductId}, ${products.masterProductId})`);
+
+      openingStockData.forEach(item => {
+        if (item.masterProductId) {
+          openingStockMap.set(item.masterProductId, parseFloat(item.totalQty || '0'));
+        }
+      });
+
+      // 3. Calculate Consumption for the day (Transactions BETWEEN startOfDay and endOfDay)
+      // Filter for 'Production Consumption' type
+      const consumptionMap = new Map();
+
+      const consumptionData = await db
+        .select({
+          masterProductId: sql`COALESCE(${inventoryTransactions.masterProductId}, ${products.masterProductId})`,
+          totalConsumption: sql`SUM(ABS(${inventoryTransactions.quantity}))`,
+        })
+        .from(inventoryTransactions)
+        .leftJoin(products, eq(inventoryTransactions.productId, products.productId))
+        .where(
+          and(
+            gte(inventoryTransactions.createdAt, startOfDay),
+            lte(inventoryTransactions.createdAt, endOfDay),
+            inArray(inventoryTransactions.transactionType, ['Production Consumption', 'Discard', 'Consumption'])
+          )
+        )
+        .groupBy(sql`COALESCE(${inventoryTransactions.masterProductId}, ${products.masterProductId})`);
+
+      consumptionData.forEach(item => {
+        if (item.masterProductId) {
+          consumptionMap.set(item.masterProductId, parseFloat(item.totalConsumption || '0'));
+        }
+      });
+
+      // 4. Merge Data
+      const reportData = materials.map(material => {
+        const openingQty = openingStockMap.get(material.masterProductId) || 0;
+        const consumption = consumptionMap.get(material.masterProductId) || 0;
+        const closingQty = openingQty - consumption;
+
+        return {
+          masterProductId: material.masterProductId,
+          masterProductName: material.masterProductName,
+          productType: material.productType,
+          openingQty,
+          consumption,
+          closingQty,
+        };
+      });
+
+      // Sort by Name
+      reportData.sort((a, b) => a.masterProductName.localeCompare(b.masterProductName));
+
+      return reportData;
+
+    } catch (error) {
+      console.error('Error fetching daily consumption report:', error);
       throw error;
     }
   }
@@ -913,13 +1019,13 @@ export class ReportsService {
       return {
         product: product
           ? {
-              ...product,
-              masterProductName: product.masterProduct?.masterProductName,
-              productType: product.masterProduct?.productType,
-              fgDetails: product.masterProduct?.fgDetails,
-              rmDetails: product.masterProduct?.rmDetails,
-              pmDetails: product.masterProduct?.pmDetails,
-            }
+            ...product,
+            masterProductName: product.masterProduct?.masterProductName,
+            productType: product.masterProduct?.productType,
+            fgDetails: product.masterProduct?.fgDetails,
+            rmDetails: product.masterProduct?.rmDetails,
+            pmDetails: product.masterProduct?.pmDetails,
+          }
           : null,
         transactions: formattedTransactions,
         bom: bom.map(b => ({
