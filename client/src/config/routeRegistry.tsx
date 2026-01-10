@@ -329,7 +329,7 @@ export const routeRegistry: RouteNode[] = [
       {
         id: 'terms',
         path: '/masters/terms',
-        label: 'Terms and Conditions',
+        label: 'Quotation Terms and Conditions',
         icon: FileText,
         component: TncPage,
         permission: { module: 'tnc' },
@@ -340,21 +340,7 @@ export const routeRegistry: RouteNode[] = [
           { route: '/tnc/:id', method: 'DELETE', label: 'Delete Term' },
         ],
       },
-      {
-        id: 'quotation-master',
-        path: '/masters/quotation-master',
-        label: 'Quotation Master',
-        icon: FileText,
-        component: QuotationMasterPage,
-        permission: { module: 'quotations' },
-        apis: [
-          { route: '/quotations', method: 'GET', label: 'View Quotations' },
-          { route: '/catalog/products/type/:type', method: 'GET', label: 'View Products' },
-          { route: '/catalog/master-products', method: 'GET', label: 'View Master Products' },
-          { route: '/quotations/:id/approve', method: 'POST', label: 'Approve Quotation' },
-          { route: '/quotations/:id/reject', method: 'POST', label: 'Reject Quotation' },
-        ],
-      },
+
       {
         id: 'customers',
         path: '/masters/customers',
@@ -446,6 +432,7 @@ export const routeRegistry: RouteNode[] = [
         label: 'Quotation Maker',
         icon: FileText,
         component: QuotationMaker,
+        showInSidebar: false,
         permission: { module: 'quotation-maker' },
         apis: [
           { route: '/masters/customers', method: 'GET', label: 'Load Customers' },
@@ -486,9 +473,24 @@ export const routeRegistry: RouteNode[] = [
         ],
       },
       {
+        id: 'quotation-master',
+        path: '/operations/quotation-requests', // Updated path for consistency
+        label: 'Quotation Requests', // Renamed
+        icon: FileText,
+        component: QuotationMasterPage,
+        permission: { module: 'quotations' },
+        apis: [
+          { route: '/quotations', method: 'GET', label: 'View Quotations' },
+          { route: '/catalog/products/type/:type', method: 'GET', label: 'View Products' },
+          { route: '/catalog/master-products', method: 'GET', label: 'View Master Products' },
+          { route: '/quotations/:id/approve', method: 'POST', label: 'Approve Quotation' },
+          { route: '/quotations/:id/reject', method: 'POST', label: 'Reject Quotation' },
+        ],
+      },
+      {
         id: 'admin-accounts',
         path: '/operations/admin-accounts',
-        label: 'Admin Accounts',
+        label: 'Order Approval by Accounts',
         icon: Briefcase,
         component: AccountsDashboard,
         permission: { module: 'admin-accounts' },
@@ -531,7 +533,7 @@ export const routeRegistry: RouteNode[] = [
       {
         id: 'accepted-orders',
         path: '/operations/accepted-orders',
-        label: 'PM - Accepted Orders',
+        label: 'Accept Order at Factory',
         icon: Factory,
         component: AcceptedOrdersPage,
         permission: { module: 'accepted-orders' },
@@ -670,7 +672,7 @@ export const routeRegistry: RouteNode[] = [
       {
         id: 'pm-inward',
         path: '/operations/pm-inward',
-        label: 'PM Material Inward',
+        label: 'All Material Inward',
         icon: Download,
         component: InwardDashboard,
         permission: { module: 'inward' },
