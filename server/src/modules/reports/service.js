@@ -395,10 +395,13 @@ export class ReportsService {
         };
       });
 
-      // Sort by Name
-      reportData.sort((a, b) => a.masterProductName.localeCompare(b.masterProductName));
+      // Filter to show only materials that were consumed on the selected day
+      const filteredReportData = reportData.filter(item => item.consumption > 0);
 
-      return reportData;
+      // Sort by Name
+      filteredReportData.sort((a, b) => a.masterProductName.localeCompare(b.masterProductName));
+
+      return filteredReportData;
 
     } catch (error) {
       console.error('Error fetching daily consumption report:', error);
