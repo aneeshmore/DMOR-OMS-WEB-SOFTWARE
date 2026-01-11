@@ -1,4 +1,4 @@
-import { eq, desc, and, gte, lte, lt, inArray, notInArray, sql } from 'drizzle-orm';
+import { eq, desc, and, gte, lte, lt, inArray, notInArray, sql, isNotNull } from 'drizzle-orm';
 import db from '../../db/index.js';
 import {
   materialInward,
@@ -15,6 +15,7 @@ import {
   suppliers,
   batchMaterials,
   productionBatch,
+  batchProducts,
   materialDiscard,
 } from '../../db/schema/index.js';
 
@@ -373,6 +374,7 @@ export class ReportsService {
       const completedBatchIds = completedBatches.map(b => b.batchId);
 
       if (completedBatchIds.length > 0) {
+        // 3a. Calculate RM Consumption (from batchMaterials)
         const batchConsumptionData = await db
           .select({
             materialId: batchMaterials.materialId,
@@ -384,6 +386,32 @@ export class ReportsService {
 
         batchConsumptionData.forEach(item => {
           consumptionMap.set(item.materialId, parseFloat(item.totalConsumption || '0'));
+        });
+
+        // 3b. Calculate PM Consumption (from batchProducts -> products -> packagingId)
+        // We look at the products produced in these batches, find their packaging (PM),
+        // and sum the units produced (1 Unit produced = 1 PM consumed usually)
+        const pmConsumptionData = await db
+          .select({
+            packagingId: products.packagingId,
+            totalProduced: sql`SUM(COALESCE(${batchProducts.producedUnits}, ${batchProducts.plannedUnits}, 0))`,
+          })
+          .from(batchProducts)
+          .innerJoin(products, eq(batchProducts.productId, products.productId))
+          .where(
+            and(
+              inArray(batchProducts.batchId, completedBatchIds),
+              isNotNull(products.packagingId)
+            )
+          )
+          .groupBy(products.packagingId);
+
+        pmConsumptionData.forEach(item => {
+          if (item.packagingId) {
+            const current = consumptionMap.get(item.packagingId) || 0;
+            // Assuming 1 Unit Product = 1 Unit Packaging
+            consumptionMap.set(item.packagingId, current + parseFloat(item.totalProduced || '0'));
+          }
         });
       }
 
