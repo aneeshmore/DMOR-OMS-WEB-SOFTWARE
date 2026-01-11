@@ -874,10 +874,10 @@ export class ProductionManagerService {
       data.map(async item => {
         const totalOrderQty = Math.max(0, parseFloat(item.totalOrderQty) || 0);
         const availableQty = Math.max(0, parseFloat(item.availableQty) || 0);
-        // We use availableQuantity directly as per the image showing negative values which implies net availability
-        // If we subtract reserved, we might double count if reserved is already accounted for in available logic
-        // But usually available = on_hand - reserved.
-        // Let's assume availableQuantity from DB is the "Available Qty" shown in the table.
+
+        // Fetch latest Product Development data for this Master Product
+        // This is crucial for new products that might not have density set in Master FG yet
+        const devData = await this.repo.getProductDevelopmentData(item.masterProductId);
 
         // Production qty is always non-negative
         let productionQty = 0;
@@ -886,14 +886,28 @@ export class ProductionManagerService {
         }
 
         let packageCapacityKg = parseFloat(item.packageCapacityKg) || 0;
-        // Use fillingDensity from products table for weight calculations
-        const fillingDensity = parseFloat(item.fillingDensity) || 0;
-        // Keep density from masterProductFG as fallback/reference
-        const masterDensity = parseFloat(item.density) || 0;
-        const pmCapacity = parseFloat(item.pmCapacity) || 0;
 
-        // Calculate expected capacity using filling density (priority) or master density (fallback)
-        const densityToUse = fillingDensity > 0 ? fillingDensity : masterDensity;
+        // DENSITY RESOLUTION LOGIC
+        // 1. filingDensity (SKU specific override)
+        // 2. devData.density (Latest formula from R&D - most accurate for new products)
+        // 3. fgDensity (Master Product default)
+
+        const fillingDensity = parseFloat(item.fillingDensity) || 0;
+        const devDensity = parseFloat(devData?.density) || 0;
+        const masterDensity = parseFloat(item.density) || 0; // This comes from masterProductFG via query alias
+
+        // Determine which density to use for calculations
+        // We prioritize SKU specific -> Development -> Master default
+        let densityToUse = 0;
+        if (fillingDensity > 0) {
+          densityToUse = fillingDensity;
+        } else if (devDensity > 0) {
+          densityToUse = devDensity;
+        } else {
+          densityToUse = masterDensity;
+        }
+
+        const pmCapacity = parseFloat(item.pmCapacity) || 0;
         const expectedCapacity = pmCapacity > 0 && densityToUse > 0 ? pmCapacity * densityToUse : 0;
 
         // Auto-fix: Calculate and persist package capacity if missing OR mismatched (stale)
@@ -909,7 +923,9 @@ export class ProductionManagerService {
               expected: expectedCapacity,
               pmCapacity,
               fillingDensity,
+              devDensity,
               masterDensity,
+              used: densityToUse
             });
           }
         }
@@ -918,7 +934,8 @@ export class ProductionManagerService {
           packageCapacityKg = expectedCapacity;
           logger.info(`Auto-fixing package packageCapacityKg for product ${item.productId}`, {
             newCapacity: packageCapacityKg,
-            usingFillingDensity: fillingDensity > 0,
+            densityUsed: densityToUse,
+            source: fillingDensity > 0 ? 'SKU' : (devDensity > 0 ? 'Dev' : 'Master')
           });
 
           // Persist to database
@@ -942,9 +959,8 @@ export class ProductionManagerService {
           `  - Package Capacity (kg): ${item.packageCapacityKg} -> Parsed: ${packageCapacityKg}`
         );
         console.log(
-          `  - Filling Density: ${fillingDensity} | Master Density: ${masterDensity} | Used: ${densityToUse}`
+          `  - Densities: SKU=${fillingDensity} | Dev=${devDensity} | Master=${masterDensity} | USED=${densityToUse}`
         );
-        console.log(`  - PM Capacity (L): ${pmCapacity}`);
 
         const productionWeight = productionQty * packageCapacityKg;
         console.log(`  - Calculated Production Weight: ${productionWeight}`);
@@ -952,6 +968,10 @@ export class ProductionManagerService {
         return {
           ...item,
           packageCapacityKg, // Ensure we return the repaired value
+          density: densityToUse, // Return the resolved density for frontend display
+          devDensity, // Return specific densities for debugging/info if needed
+          fillingDensity,
+          masterDensity,
           totalOrderQty,
           availableQty,
           productionQty,
@@ -1059,8 +1079,8 @@ export class ProductionManagerService {
       const actualWeightKg =
         completionData.actualQuantity && completionData.actualDensity
           ? (
-              parseFloat(completionData.actualQuantity) * parseFloat(completionData.actualDensity)
-            ).toFixed(4)
+            parseFloat(completionData.actualQuantity) * parseFloat(completionData.actualDensity)
+          ).toFixed(4)
           : null;
 
       // Note: Raw materials are already deducted at scheduling time from masterProductRM.availableQty
